@@ -46,10 +46,11 @@ Future<void> performClinovaGoogleSignIn(WidgetRef ref, BuildContext context) asy
   final ga = await account.authentication;
   final idToken = ga.idToken;
   if (idToken == null || idToken.isEmpty) {
+    final msg = kIsWeb
+        ? 'Google вэб: Cloud Console-д Web OAuth client үүсгээд Authorized JS origins-д Vercel URL нэмээд dart-define GOOGLE_CLIENT_ID / backend GOOGLE_CLIENT_ID ижил эсэхийг шалгана.'
+        : 'Google id tokens ирээгүй байна. Backend дээрх GOOGLE_CLIENT_ID нь платформыг давхардсан OAuth client ID эсэхийг шалга (голчлон Web Application client id). ${l10n.authGoogleContinue}';
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.authGoogleContinue)),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     }
     return;
   }

@@ -928,24 +928,36 @@ export class AuthService {
     return this.passwordLogin(emailInput, password);
   }
 
+  private googleIdTokenAudiences(): string[] {
+    const listRaw = this.config.get<string>('GOOGLE_CLIENT_IDS') ?? '';
+    const fromList = listRaw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const single = this.config.get<string>('GOOGLE_CLIENT_ID')?.trim();
+    return [...new Set([...(single ? [single] : []), ...fromList])];
+  }
+
   async googleSignIn(idToken: string) {
     await this.ensureBootstrapSeeded();
 
-    const clientId = this.config.get<string>('GOOGLE_CLIENT_ID');
-    if (!clientId) {
+    const audiences = this.googleIdTokenAudiences();
+    if (audiences.length === 0) {
       throw new BadRequestException('Google sign-in is not configured.');
     }
 
-    const client = new OAuth2Client(clientId);
+    const client = new OAuth2Client();
     let payload: TokenPayload | undefined;
     try {
       const ticket = await client.verifyIdToken({
         idToken,
-        audience: clientId,
+        audience: audiences.length === 1 ? audiences[0] : audiences,
       });
       payload = ticket.getPayload() ?? undefined;
     } catch {
-      throw new UnauthorizedException('Invalid Google token.');
+      throw new UnauthorizedException(
+        'Invalid Google token — use the OAuth Web Client ID from Google Cloud Console (or match GOOGLE_CLIENT_ID / comma-separated GOOGLE_CLIENT_IDS).',
+      );
     }
 
     if (!payload?.email) {

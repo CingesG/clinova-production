@@ -143,13 +143,20 @@ export class MailerService {
         ]
       : [];
 
-    await this.transporter.sendMail({
-      from: this.fromEmail,
-      to: email,
-      subject,
-      html,
-      attachments,
-    });
+    try {
+      await this.transporter.sendMail({
+        from: this.fromEmail,
+        to: email,
+        subject,
+        html,
+        attachments,
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to deliver OTP email to ${email}: ${err instanceof Error ? err.message : err}`,
+      );
+      return { delivered: false, debugCode: emailDebug ? code : undefined };
+    }
 
     return { delivered: true };
   }
