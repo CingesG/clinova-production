@@ -495,6 +495,7 @@ class AuthController extends StateNotifier<AuthState> {
     required String email,
     String? firstName,
     String? lastName,
+    OtpIntent otpIntent = OtpIntent.signInCode,
   }) async {
     state = state.copyWith(isBusy: true, clearError: true);
     try {
@@ -506,7 +507,7 @@ class AuthController extends StateNotifier<AuthState> {
         pendingEmail: email,
         pendingFirstName: firstName,
         pendingLastName: lastName,
-        otpIntent: OtpIntent.signInCode,
+        otpIntent: otpIntent,
         debugCode: response['debugCode']?.toString(),
         isBusy: false,
         clearError: true,
@@ -555,6 +556,7 @@ class AuthController extends StateNotifier<AuthState> {
           email: email,
           firstName: state.pendingFirstName,
           lastName: state.pendingLastName,
+          otpIntent: OtpIntent.register,
         );
         return;
       case OtpIntent.signInCode:
@@ -562,6 +564,7 @@ class AuthController extends StateNotifier<AuthState> {
           email: email,
           firstName: state.pendingFirstName,
           lastName: state.pendingLastName,
+          otpIntent: OtpIntent.signInCode,
         );
         return;
       case null:
