@@ -1,0 +1,5 @@
+# Point Netlify "Publish directory" to build/web after:
+#   API_BASE_URL=https://your-backend ./tool/build_web_release.sh
+# SPA fallback: web/_redirects is copied into build/web by Flutter.
+[build]
+  publish = "build/web"

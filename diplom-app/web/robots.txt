@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+# Продакшн билдийн өмнө: export SITE_BASE_URL=https://...

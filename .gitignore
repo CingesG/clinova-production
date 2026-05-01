@@ -1,0 +1,57 @@
+# Secrets — ил захыг үл commit хийнэ (.env.example л үлдэнэ)
+.env
+.env.*
+!.env.example
+*credentials*.json
+active-login-credentials.json
+tmp-reset-credentials.json
+GoogleService-Info.plist
+google-services.json
+
+# Node / Nest
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+
+# Flutter / Dart generated
+.dart_tool/
+**/.dart_tool/
+build/
+**/build/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+
+# iOS / macOS / Linux / Windows ephemeral
+Pods/
+**/Pods/
+.symlinks/
+**/.symlinks/
+ephemeral/
+**/ephemeral/
+Generated.xcconfig
+flutter_export_environment.sh
+
+# Android local
+**/local.properties
+
+# Runtime uploads
+uploads/
+**/uploads/
+clinova-backend/tmp/
+
+# IDE / OS
+.DS_Store
+.vscode/
+.idea/
+*.iml
+
+# Logs
+*.log
+
+# Firebase local config
+GoogleService-Info.plist
+google-services.json

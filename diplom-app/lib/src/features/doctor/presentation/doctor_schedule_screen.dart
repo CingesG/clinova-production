@@ -1,0 +1,161 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
+
+import '../../../core/network/clinova_api.dart';
+import '../../../core/widgets/clinova_backdrop.dart';
+
+class DoctorScheduleScreen extends ConsumerStatefulWidget {
+  const DoctorScheduleScreen({super.key});
+
+  @override
+  ConsumerState<DoctorScheduleScreen> createState() => _DoctorScheduleScreenState();
+}
+
+class _DoctorScheduleScreenState extends ConsumerState<DoctorScheduleScreen> {
+  String _status = 'ALL';
+  bool _loading = false;
+  final Set<String> _busyIds = <String>{};
+  List<Map<String, dynamic>> _items = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    Future<void>.microtask(_load);
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final data = await ref.read(clinovaApiProvider).getAppointments(
+            status: _status == 'ALL' ? null : _status,
+          );
+      if (!mounted) return;
+      setState(() {
+        _items = (data['items'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
+      });
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _setStatus(String appointmentId, String status) async {
+    if (_busyIds.contains(appointmentId)) return;
+    setState(() => _busyIds.add(appointmentId));
+    try {
+      await ref.read(clinovaApiProvider).updateAppointmentStatus(
+            appointmentId: appointmentId,
+            status: status,
+          );
+      if (!mounted) return;
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+    } finally {
+      if (mounted) setState(() => _busyIds.remove(appointmentId));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded),
+          onPressed: () => context.go('/doctor'),
+        ),
+        title: const Text('Миний хуваарь'),
+      ),
+      body: ClinovaBackdrop(
+        child: SafeArea(
+          child: Column(
+            children: [
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+                child: Row(
+                  children: [
+                    for (final s in const ['ALL', 'PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELLED'])
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ChoiceChip(
+                          label: Text(s),
+                          selected: _status == s,
+                          onSelected: (_) {
+                            setState(() => _status = s);
+                            _load();
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 18),
+                        itemCount: _items.length,
+                        itemBuilder: (context, index) {
+                          final ap = _items[index];
+                          final id = ap['id']?.toString() ?? '';
+                          final patient = ap['patient']?['user'] as Map<String, dynamic>? ?? const {};
+                          final service = ap['service'] as Map<String, dynamic>? ?? const {};
+                          final starts = DateTime.tryParse(ap['startsAt']?.toString() ?? '');
+                          final status = (ap['status']?.toString() ?? '').toUpperCase();
+                          final busy = _busyIds.contains(id);
+                          final time = starts == null
+                              ? '--'
+                              : DateFormat('yyyy-MM-dd HH:mm').format(starts.toLocal());
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 10),
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.93),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${patient['firstName'] ?? ''} ${patient['lastName'] ?? ''}'.trim(),
+                                  style: const TextStyle(fontWeight: FontWeight.w700),
+                                ),
+                                const SizedBox(height: 4),
+                                Text('${service['name'] ?? '—'} • $time'),
+                                const SizedBox(height: 8),
+                                Text('Төлөв: $status'),
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    FilledButton(
+                                      onPressed: id.isEmpty || busy
+                                          ? null
+                                          : () => _setStatus(id, 'CONFIRMED'),
+                                      child: Text(busy ? '...' : 'Эхлүүлэх'),
+                                    ),
+                                    OutlinedButton(
+                                      onPressed: id.isEmpty || busy
+                                          ? null
+                                          : () => _setStatus(id, 'COMPLETED'),
+                                      child: Text(busy ? '...' : 'Дуусгах'),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
