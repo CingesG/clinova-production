@@ -1,11 +1,14 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
+  Headers,
   Post,
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import { ConfigService } from '@nestjs/config';
 import {
   IsEmail,
   IsIn,
@@ -18,6 +21,7 @@ import { OtpPurpose } from '@prisma/client';
 
 import { CurrentUser, CurrentUserPayload } from '../common/current-user.decorator';
 import { AuthGuard } from '../common/auth.guard';
+import { MailerService } from '../common/mailer.service';
 import { AuthService } from './auth.service';
 
 class RequestOtpDto {
@@ -96,10 +100,19 @@ class LogoutDto {
   refreshToken?: string;
 }
 
+class TestEmailDto {
+  @IsEmail()
+  email!: string;
+}
+
 @Controller('auth')
 @Throttle({ default: { limit: 30, ttl: 60000 } })
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly config: ConfigService,
+    private readonly mailer: MailerService,
+  ) {}
 
   @Post('request-otp')
   @Throttle({ default: { limit: 8, ttl: 60000 } })
@@ -157,6 +170,22 @@ export class AuthController {
       dto.otp,
       dto.newPassword,
     );
+  }
+
+  /** SMTP шалгалт (зөвхөн EMAIL_TEST_SECRET + header-д таарах үед идэвхтэй). */
+  @Post('test-email')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  testOutboundEmail(
+    @Headers('x-clinova-email-test-secret') secret: string | undefined,
+    @Body() dto: TestEmailDto,
+  ) {
+    const expected = this.config.get<string>('EMAIL_TEST_SECRET')?.trim();
+    if (!expected || secret !== expected) {
+      throw new ForbiddenException(
+        'Test email endpoint disabled or invalid secret.',
+      );
+    }
+    return this.mailer.sendTestEmail(dto.email.trim().toLowerCase());
   }
 
   @Get('me')

@@ -7,6 +7,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -37,6 +38,9 @@ const USER_INCLUDE = {
   patientProfile: { select: { id: true } },
   doctorProfile: { select: { id: true } },
 } as const;
+
+const OTP_EMAIL_FAILED_MN =
+  'Баталгаажуулах код илгээхэд алдаа гарлаа. Имэйл тохиргоог шалгана уу.';
 
 @Injectable()
 export class AuthService {
@@ -474,6 +478,7 @@ export class AuthService {
   ): Promise<{
     message: string;
     expiresInSeconds: number;
+    emailDelivered: boolean;
     debugCode?: string;
   }> {
     // LOGIN OTP is re-issued on each successful password check; do not block quick repeats.
@@ -497,7 +502,7 @@ export class AuthService {
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
     const resendAvailableAt = new Date(Date.now() + 60 * 1000);
 
-    await this.prisma.otpCode.create({
+    const otpRow = await this.prisma.otpCode.create({
       data: {
         email,
         userId,
@@ -510,13 +515,51 @@ export class AuthService {
       },
     });
 
-    const mailResult = await this.mailer.sendOtpEmail(email, code);
-    await this.audit(userId, 'OTP_SENT', { purpose });
+    this.logger.log(
+      `[OTP flow] purpose=${purpose} recipient=${email} prismaRowId=${otpRow.id} codeGenerated=******`,
+    );
+
+    const requireDelivered = purpose !== OtpPurpose.PASSWORD_RESET;
+
+    const mailResult = await this.mailer.sendOtpEmail(email, code, {
+      purpose: String(purpose),
+    });
+
+    if (mailResult.delivered) {
+      await this.audit(userId, 'OTP_SENT', { purpose });
+      return {
+        message: 'Verification code sent.',
+        expiresInSeconds: 600,
+        emailDelivered: true,
+      };
+    }
+
+    if (mailResult.debugCode !== undefined && mailResult.debugCode !== '') {
+      await this.audit(userId, 'OTP_SENT_DEBUG_FALLBACK', { purpose });
+      return {
+        message: 'Verification code sent (SMTP unavailable; debug code returned).',
+        expiresInSeconds: 600,
+        emailDelivered: false,
+        debugCode: mailResult.debugCode,
+      };
+    }
+
+    await this.prisma.otpCode
+      .delete({ where: { id: otpRow.id } })
+      .catch(() => undefined);
+    await this.audit(userId, 'OTP_EMAIL_FAILED', {
+      purpose,
+      smtpCode: mailResult.smtpError?.code,
+    });
+
+    if (requireDelivered) {
+      throw new ServiceUnavailableException(OTP_EMAIL_FAILED_MN);
+    }
 
     return {
       message: 'Verification code sent.',
       expiresInSeconds: 600,
-      debugCode: 'debugCode' in mailResult ? mailResult.debugCode : undefined,
+      emailDelivered: false,
     };
   }
 
@@ -608,6 +651,10 @@ export class AuthService {
       OtpPurpose.PASSWORD_RESET,
     );
     await this.audit(user.id, 'PASSWORD_RESET_REQUESTED', {});
+
+    if (!sent.emailDelivered && !sent.debugCode) {
+      return generic;
+    }
 
     return {
       message: generic.message,

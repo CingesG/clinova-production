@@ -1,24 +1,69 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { existsSync } from 'fs';
 import * as nodemailer from 'nodemailer';
 import { resolve } from 'path';
 
+export type OtpEmailSendResult = {
+  delivered: boolean;
+  messageId?: string;
+  debugCode?: string;
+  smtpError?: {
+    name?: string;
+    message: string;
+    code?: string;
+    command?: string;
+    response?: string;
+  };
+};
+
+function smtpErrorShape(err: unknown): NonNullable<OtpEmailSendResult['smtpError']> {
+  if (!err || typeof err !== 'object') {
+    return { message: String(err) };
+  }
+  const e = err as Record<string, unknown>;
+  return {
+    name: typeof e.name === 'string' ? e.name : undefined,
+    message:
+      typeof e.message === 'string'
+        ? e.message
+        : typeof e.toString === 'function'
+          ? (e.toString() as string)
+          : 'Unknown error',
+    code: typeof e.code === 'string' ? e.code : undefined,
+    command: typeof e.command === 'string' ? e.command : undefined,
+    response:
+      typeof e.response === 'string'
+        ? e.response
+        : e.response != null
+          ? String(e.response)
+          : undefined,
+  };
+}
+
 @Injectable()
-export class MailerService {
+export class MailerService implements OnModuleInit {
   private readonly logger = new Logger(MailerService.name);
   private readonly transporter?: nodemailer.Transporter;
   private readonly fromEmail: string;
 
   constructor(private readonly config: ConfigService) {
-    const host =
+    const host = (
       this.config.get<string>('SMTP_HOST') ??
-      this.config.get<string>('EMAIL_HOST');
+      this.config.get<string>('EMAIL_HOST') ??
+      'smtp.gmail.com'
+    ).trim();
+
     const port = Number(
       this.config.get<string>('SMTP_PORT') ??
         this.config.get<string>('EMAIL_PORT') ??
-        587,
+        '587',
     );
+
+    const secure =
+      this.config.get<string>('SMTP_SECURE', 'false').toLowerCase() ===
+      'true';
+
     const user =
       this.config.get<string>('SMTP_USER') ??
       this.config.get<string>('EMAIL_USER');
@@ -37,12 +82,46 @@ export class MailerService {
       this.transporter = nodemailer.createTransport({
         host,
         port,
-        secure: port === 465,
+        secure,
         auth: {
           user,
           pass,
         },
       });
+    }
+  }
+
+  private logSmtpEnvPresence() {
+    const has = (key: string) => {
+      const v = this.config.get<string>(key);
+      return v != null && String(v).trim().length > 0;
+    };
+    this.logger.log(
+      `[SMTP env] SMTP_HOST=${has('SMTP_HOST') || has('EMAIL_HOST')} ` +
+        `SMTP_PORT=${has('SMTP_PORT') || has('EMAIL_PORT')} ` +
+        `SMTP_SECURE=${has('SMTP_SECURE')} ` +
+        `SMTP_USER=${has('SMTP_USER') || has('EMAIL_USER')} ` +
+        `SMTP_PASS=${has('SMTP_PASS') || has('EMAIL_PASS')} ` +
+        `SMTP_FROM=${has('SMTP_FROM') || has('EMAIL_FROM')}`,
+    );
+  }
+
+  async onModuleInit() {
+    this.logSmtpEnvPresence();
+    if (!this.transporter) {
+      this.logger.warn(
+        'SMTP transporter not created (missing host/user/pass or invalid). OTP emails will not send unless EMAIL_DEBUG returns debugCode.',
+      );
+      return;
+    }
+    try {
+      await this.transporter.verify();
+      this.logger.log('SMTP transporter.verify() OK — connection ready.');
+    } catch (err) {
+      const s = smtpErrorShape(err);
+      this.logger.error(
+        `SMTP transporter.verify() FAILED name=${s.name ?? 'n/a'} code=${s.code ?? 'n/a'} message=${s.message}`,
+      );
     }
   }
 
@@ -55,7 +134,69 @@ export class MailerService {
       .replaceAll("'", '&#39;');
   }
 
-  async sendOtpEmail(email: string, code: string) {
+  private otpDebugEnabled(): boolean {
+    return (
+      this.config.get<string>('OTP_DEBUG', 'false').toLowerCase() === 'true'
+    );
+  }
+
+  private emailDebugEnabled(): boolean {
+    const isProduction =
+      this.config.get<string>('NODE_ENV', 'development').toLowerCase() ===
+      'production';
+    return (
+      this.config
+        .get<string>('EMAIL_DEBUG', isProduction ? 'false' : 'true')
+        .toLowerCase() === 'true'
+    );
+  }
+
+  /**
+   * Safe diagnostic email (no secrets in response). Use with POST /auth/test-email + header.
+   */
+  async sendTestEmail(to: string): Promise<{
+    ok: boolean;
+    messageId?: string;
+    error?: OtpEmailSendResult['smtpError'];
+  }> {
+    if (!this.transporter) {
+      return {
+        ok: false,
+        error: { message: 'SMTP transporter not configured' },
+      };
+    }
+    try {
+      const info = await this.transporter.sendMail({
+        from: this.fromEmail,
+        to,
+        subject: 'Clinova SMTP test',
+        text: 'If you received this, outbound SMTP from Render is working.',
+      });
+      const messageId =
+        typeof info.messageId === 'string' ? info.messageId : undefined;
+      this.logger.log(
+        `[SMTP test] sent to ${to} messageId=${messageId ?? 'n/a'}`,
+      );
+      return { ok: true, messageId };
+    } catch (err) {
+      const s = smtpErrorShape(err);
+      this.logger.error(
+        `[SMTP test] FAILED to=${to} name=${s.name ?? 'n/a'} code=${s.code ?? 'n/a'} command=${s.command ?? 'n/a'} message=${s.message}`,
+      );
+      return { ok: false, error: s };
+    }
+  }
+
+  async sendOtpEmail(
+    email: string,
+    code: string,
+    context: { purpose: string },
+  ): Promise<OtpEmailSendResult> {
+    if (this.otpDebugEnabled()) {
+      // eslint-disable-next-line no-console -- explicit Render log when OTP_DEBUG=true only
+      console.log('[OTP DEBUG]', email, code);
+    }
+
     const appNameRaw = this.config.get<string>('APP_NAME', 'Clinova');
     const appName = this.escapeHtml(appNameRaw);
     const otpCode = this.escapeHtml(code);
@@ -70,8 +211,8 @@ export class MailerService {
     const logoBlock = safeLogoUrl
       ? `<img src="${safeLogoUrl}" alt="${appName} logo" width="44" height="44" style="display:block;width:44px;height:44px;border-radius:12px;object-fit:cover;border:1px solid #dbeafe;" />`
       : hasInlineLogo
-      ? `<img src="cid:${logoCid}" alt="${appName} logo" width="44" height="44" style="display:block;width:44px;height:44px;border-radius:12px;object-fit:contain;background:#ffffff;border:1px solid #dbeafe;" />`
-      : `<div style="display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:12px;background:#eaf2ff;color:#1d4ed8;font-weight:700;font-size:14px;letter-spacing:0.4px;">CL</div>`;
+        ? `<img src="cid:${logoCid}" alt="${appName} logo" width="44" height="44" style="display:block;width:44px;height:44px;border-radius:12px;object-fit:contain;background:#ffffff;border:1px solid #dbeafe;" />`
+        : `<div style="display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:12px;background:#eaf2ff;color:#1d4ed8;font-weight:700;font-size:14px;letter-spacing:0.4px;">CL</div>`;
     const subject = `Your ${appNameRaw} verification code`;
     const html = `
       <div style="margin:0;padding:24px 12px;background:#f3f7ff;font-family:Arial,sans-serif;">
@@ -117,21 +258,18 @@ export class MailerService {
       </div>
     `;
 
-    const isProduction =
-      this.config.get<string>('NODE_ENV', 'development').toLowerCase() ===
-      'production';
-    // In development, default to debug mode so OTP is visible even without SMTP.
-    const emailDebug =
-      this.config
-        .get<string>('EMAIL_DEBUG', isProduction ? 'false' : 'true')
-        .toLowerCase() === 'true';
+    const emailDebug = this.emailDebugEnabled();
 
     if (!this.transporter) {
       this.logger.warn(
-        `SMTP is not configured; OTP email was not sent. OTP for ${email}: ${code}`,
+        `[OTP email] purpose=${context.purpose} recipient=${email} — transporter missing, email NOT sent`,
       );
       return { delivered: false, debugCode: emailDebug ? code : undefined };
     }
+
+    this.logger.log(
+      `[OTP email] purpose=${context.purpose} recipient=${email} — send starting`,
+    );
 
     const attachments: nodemailer.Attachment[] = hasInlineLogo
       ? [
@@ -144,20 +282,29 @@ export class MailerService {
       : [];
 
     try {
-      await this.transporter.sendMail({
+      const info = await this.transporter.sendMail({
         from: this.fromEmail,
         to: email,
         subject,
         html,
         attachments,
       });
-    } catch (err) {
-      this.logger.error(
-        `Failed to deliver OTP email to ${email}: ${err instanceof Error ? err.message : err}`,
+      const messageId =
+        typeof info.messageId === 'string' ? info.messageId : undefined;
+      this.logger.log(
+        `[OTP email] purpose=${context.purpose} recipient=${email} — SUCCESS messageId=${messageId ?? 'n/a'}`,
       );
-      return { delivered: false, debugCode: emailDebug ? code : undefined };
+      return { delivered: true, messageId };
+    } catch (err) {
+      const s = smtpErrorShape(err);
+      this.logger.error(
+        `[OTP email] purpose=${context.purpose} recipient=${email} — FAILED name=${s.name ?? 'n/a'} code=${s.code ?? 'n/a'} command=${s.command ?? 'n/a'} response=${s.response ?? 'n/a'} message=${s.message}`,
+      );
+      return {
+        delivered: false,
+        debugCode: emailDebug ? code : undefined,
+        smtpError: s,
+      };
     }
-
-    return { delivered: true };
   }
 }
