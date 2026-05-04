@@ -16,14 +16,18 @@ flutter config --enable-web --no-analytics
 flutter precache --web
 flutter pub get
 
-: "${API_BASE_URL:?Vercel env: API_BASE_URL (жишээ https://clinova-api.onrender.com)}"
-: "${SITE_BASE_URL:?Vercel env: SITE_BASE_URL (жишээ https://clinova.vercel.app — trailing slash битгий)}"
+# Vercel env-ээр дамжуулаагүй тохиолдолд бодит production backend / фронтын URL (placeholder биш).
+export API_BASE_URL="${API_BASE_URL:-https://clinova-api-production.onrender.com}"
+export SITE_BASE_URL="${SITE_BASE_URL:-https://clinova-production.vercel.app}"
 
 bash tool/render_seo_assets.sh
 
-DEFINES=(--dart-define=API_BASE_URL="${API_BASE_URL}")
+DEFINES=(
+  --dart-define=API_BASE_URL="${API_BASE_URL}"
+  --dart-define=SITE_BASE_URL="${SITE_BASE_URL}"
+  --dart-define=GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-}"
+)
 [[ -z "${REALTIME_BASE_URL:-}" ]] || DEFINES+=(--dart-define=REALTIME_BASE_URL="${REALTIME_BASE_URL}")
-[[ -z "${GOOGLE_CLIENT_ID:-}" ]] || DEFINES+=(--dart-define=GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID}")
 
 for key in FIREBASE_WEB_API_KEY FIREBASE_WEB_AUTH_DOMAIN FIREBASE_WEB_PROJECT_ID \
            FIREBASE_WEB_STORAGE_BUCKET FIREBASE_WEB_MESSAGING_SENDER_ID \

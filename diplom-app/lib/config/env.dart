@@ -1,11 +1,12 @@
 /// Compile-time configuration via `--dart-define=KEY=value`.
 ///
-/// Production web builds must pass at least `API_BASE_URL` (see `tool/build_web_release.sh`).
+/// Production web builds must pass `API_BASE_URL` (see `tool/vercel_flutter_build.sh`, `tool/build_web_release.sh`).
+/// Local/API override: `--dart-define=API_BASE_URL=http://localhost:4000`.
 /// Web Google Sign-In / Firebase expect `GOOGLE_CLIENT_ID` and `FIREBASE_WEB_*` when used on web.
 class Env {
   static const String apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://localhost:4000',
+    defaultValue: 'https://clinova-api-production.onrender.com',
   );
 
   static const String realtimeBaseUrl = String.fromEnvironment(

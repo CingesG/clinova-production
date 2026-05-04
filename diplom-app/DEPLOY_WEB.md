@@ -56,7 +56,7 @@ Realtime / chat ажиллахын тулд фронт дээр `REALTIME_BASE_U
 **Түр жишээ (эхний deploy, бодит URL гармагц шинэчил)**:
 
 ```text
-API_BASE_URL=https://clinova-api.onrender.com
+API_BASE_URL=https://clinova-api-production.onrender.com
 SITE_BASE_URL=https://clinova-production.vercel.app
 ```
 
