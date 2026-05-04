@@ -229,7 +229,7 @@ async function main() {
       status: UserStatus.ACTIVE,
       firstName: 'Anu',
       lastName: 'Patient',
-      phone: '+97699112233',
+      phoneNumber: '+97699112233',
       patientProfile: {
         create: {
           address: 'Zaisan, Ulaanbaatar',

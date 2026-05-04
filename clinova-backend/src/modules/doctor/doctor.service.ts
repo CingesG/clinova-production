@@ -14,6 +14,11 @@ import {
 } from '@prisma/client';
 
 import { PrismaService } from '../common/prisma.service';
+import {
+  MONGOLIA_PHONE_INVALID_MESSAGE,
+  normalizeOptionalMongoliaPhone,
+} from '../common/mongolia-phone.util';
+import { USER_DETAIL_ADMIN_SAFE_SELECT } from '../common/user-public-select';
 
 type DoctorInput = {
   username?: string;
@@ -21,6 +26,7 @@ type DoctorInput = {
   firstName: string;
   lastName: string;
   phone?: string;
+  phoneNumber?: string;
   branchId: string;
   departmentId: string;
   bio?: string;
@@ -60,6 +66,15 @@ type DoctorFeedbackInput = {
 @Injectable()
 export class DoctorService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private coerceOptionalDoctorPhone(raw?: string | null): string | undefined {
+    if (raw === undefined || raw === null || !String(raw).trim())
+      return undefined;
+    const n = normalizeOptionalMongoliaPhone(String(raw));
+    if (n === null)
+      throw new BadRequestException(MONGOLIA_PHONE_INVALID_MESSAGE);
+    return n;
+  }
 
   private normalizeLoginId(value: string | undefined) {
     const raw = (value ?? '').trim().toLowerCase();
@@ -106,8 +121,11 @@ export class DoctorService {
           },
         },
         {
-          department: {
-            name: { contains: filters.search, mode: 'insensitive' },
+          user: {
+            phoneNumber: {
+              contains: filters.search,
+              mode: 'insensitive',
+            },
           },
         },
       ];
@@ -127,7 +145,7 @@ export class DoctorService {
             email: true,
             firstName: true,
             lastName: true,
-            phone: true,
+            phoneNumber: true,
             avatarUrl: true,
             status: true,
           },
@@ -233,7 +251,7 @@ export class DoctorService {
         firstName: true,
         lastName: true,
         email: true,
-        phone: true,
+        phoneNumber: true,
         avatarUrl: true,
         patientProfile: {
           select: {
@@ -261,7 +279,8 @@ export class DoctorService {
           firstName: user.firstName,
           lastName: user.lastName,
           email: user.email,
-          phone: user.phone,
+          phoneNumber: user.phoneNumber,
+          phone: user.phoneNumber,
           avatarUrl: user.avatarUrl,
         },
         serviceName: latest?.service?.name ?? '',
@@ -275,7 +294,9 @@ export class DoctorService {
     const doctor = await this.prisma.doctorProfile.findUnique({
       where: { id },
       include: {
-        user: true,
+        user: {
+          select: USER_DETAIL_ADMIN_SAFE_SELECT,
+        },
         branch: true,
         department: true,
         services: {
@@ -320,6 +341,9 @@ export class DoctorService {
       );
     }
     const passwordHash = await bcrypt.hash(temporaryPassword, 10);
+    const phoneNormalized = this.coerceOptionalDoctorPhone(
+      input.phoneNumber ?? input.phone,
+    );
     await Promise.all([
       this.ensureBranch(input.branchId),
       this.ensureDepartment(input.departmentId),
@@ -343,7 +367,9 @@ export class DoctorService {
             status: UserStatus.ACTIVE,
             firstName: input.firstName,
             lastName: input.lastName,
-            phone: input.phone,
+            ...(phoneNormalized !== undefined
+              ? { phoneNumber: phoneNormalized }
+              : {}),
             avatarUrl: input.avatarUrl,
             branchId: input.branchId,
             passwordHash,
@@ -357,7 +383,9 @@ export class DoctorService {
             status: UserStatus.ACTIVE,
             firstName: input.firstName,
             lastName: input.lastName,
-            phone: input.phone,
+            ...(phoneNormalized !== undefined
+              ? { phoneNumber: phoneNormalized }
+              : {}),
             avatarUrl: input.avatarUrl,
             branchId: input.branchId,
           },
@@ -408,13 +436,26 @@ export class DoctorService {
       await this.ensureServices(input.serviceIds, input.branchId ?? doctor.branchId);
     }
 
+    const rawMerged =
+      input.phoneNumber !== undefined ? input.phoneNumber : input.phone;
+    let phonePayload: Record<string, string | null> = {};
+    if (rawMerged !== undefined) {
+      if (rawMerged === null || String(rawMerged).trim() === '') {
+        phonePayload = { phoneNumber: null };
+      } else {
+        const n = this.coerceOptionalDoctorPhone(String(rawMerged));
+        phonePayload =
+          n === undefined ? { phoneNumber: null } : { phoneNumber: n };
+      }
+    }
+
     await this.prisma.$transaction(async (tx) => {
       await tx.user.update({
         where: { id: doctor.userId },
         data: {
           firstName: input.firstName,
           lastName: input.lastName,
-          phone: input.phone,
+          ...phonePayload,
           avatarUrl: input.avatarUrl,
           branchId: input.branchId,
         },

@@ -1,3 +1,5 @@
+import '../../../core/formatting/contact_display.dart';
+
 class AppUser {
   const AppUser({
     required this.id,
@@ -7,7 +9,7 @@ class AppUser {
     this.firstName,
     this.lastName,
     this.nickname,
-    this.phone,
+    this.phoneNumber,
     this.avatarUrl,
     this.patientProfileId,
     this.doctorProfileId,
@@ -21,11 +23,15 @@ class AppUser {
   final String? firstName;
   final String? lastName;
   final String? nickname;
-  final String? phone;
+  /// E.164 Mongolian (+976…) when set from backend.
+  final String? phoneNumber;
   final String? avatarUrl;
   final String? patientProfileId;
   final String? doctorProfileId;
   final Map<String, dynamic>? branch;
+
+  /// Back-compat accessor for older widgets.
+  String? get phone => phoneNumber;
 
   String get displayName {
     final nick = nickname?.trim();
@@ -49,7 +55,7 @@ class AppUser {
       firstName: json['firstName']?.toString(),
       lastName: json['lastName']?.toString(),
       nickname: json['nickname']?.toString(),
-      phone: json['phone']?.toString(),
+      phoneNumber: pickPhoneNumberFromJson(json),
       avatarUrl: json['avatarUrl']?.toString(),
       patientProfileId: json['patientProfileId']?.toString(),
       doctorProfileId: json['doctorProfileId']?.toString(),

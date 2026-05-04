@@ -98,7 +98,8 @@ model User {
   lastName            String?
   /** Optional display handle; shown in app when set (overrides first+last). */
   nickname            String?
-  phone               String?
+  /** E.164 style e.g. +97688071574 (DB column stays `phone` for compat). */
+  phoneNumber         String?         @map("phone")
   avatarUrl           String?
   branchId            String?
   jobTitle            String?

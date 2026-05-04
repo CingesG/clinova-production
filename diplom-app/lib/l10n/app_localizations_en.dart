@@ -461,6 +461,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get authVerifyBackToLogin => 'Back to log in';
 
   @override
+  String get authVerifyBackToRegister => 'Back to sign up';
+
+  @override
+  String get authOtpSixDigitInstruction =>
+      'Enter your 6-digit verification code';
+
+  @override
   String get authOtpExtraSecurityBadge => 'Extra security step';
 
   @override

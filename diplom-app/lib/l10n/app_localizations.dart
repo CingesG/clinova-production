@@ -710,6 +710,9 @@ abstract class AppLocalizations {
   String get authRememberMe;
   String get authOrDivider;
   String get authVerifyBackToLogin;
+  String get authVerifyBackToRegister;
+  /// Shown above the OTP input (email verification).
+  String get authOtpSixDigitInstruction;
   String get authOtpExtraSecurityBadge;
   String get authOtpGoogleHint;
   String get authOtpProtectionNote;

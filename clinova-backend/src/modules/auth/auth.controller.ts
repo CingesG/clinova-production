@@ -38,7 +38,7 @@ class RequestOtpDto {
 
   @IsOptional()
   @IsString()
-  phone?: string;
+  phoneNumber?: string;
 }
 
 class VerifyOtpDto {

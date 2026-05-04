@@ -2,6 +2,7 @@ import 'package:diplom_app/l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/formatting/contact_display.dart';
 import '../../../core/localization/context_l10n.dart';
 import '../../../core/network/clinova_api.dart';
 import '../../../core/widgets/clinova_backdrop.dart';
@@ -749,6 +750,11 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                 userItem['email']?.toString() ?? '-',
                 style: const TextStyle(color: Color(0xFF475569), fontSize: 12),
               ),
+              const SizedBox(height: 4),
+              Text(
+                'Утас: ${displayMnRegisteredPhone(Map<String, dynamic>.from(userItem))}',
+                style: const TextStyle(color: Color(0xFF475569), fontSize: 12),
+              ),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -870,10 +876,12 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                     '${userItem['firstName'] ?? ''} ${userItem['lastName'] ?? ''}'
                         .trim();
                 final roleMatch = _roleFilter == 'ALL' || role == _roleFilter;
+                final phoneHay = '${userItem['phoneNumber']} ${userItem['phone']}';
                 final searchMatch =
                     query.isEmpty ||
                     email.toLowerCase().contains(query) ||
-                    fullName.toLowerCase().contains(query);
+                    fullName.toLowerCase().contains(query) ||
+                    phoneHay.toLowerCase().contains(query);
                 return roleMatch && searchMatch;
               }).toList();
 
@@ -1107,6 +1115,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                                       DataColumn(label: Text('Role')),
                                       DataColumn(label: Text('Төлөв')),
                                       DataColumn(label: Text('Имэйл')),
+                                      DataColumn(label: Text('Утас')),
                                       DataColumn(label: Text('Үйлдэл')),
                                     ],
                                     rows: filteredUsers.take(20).map((
@@ -1134,6 +1143,15 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                                             Text(
                                               userItem['email']?.toString() ??
                                                   '-',
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Text(
+                                              displayMnRegisteredPhone(
+                                                Map<String, dynamic>.from(
+                                                  userItem,
+                                                ),
+                                              ),
                                             ),
                                           ),
                                           DataCell(

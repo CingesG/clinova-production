@@ -63,6 +63,15 @@ class _VerifyOtpScreenState extends ConsumerState<VerifyOtpScreen> {
 
   String _otpString() => _controllers.map((c) => c.text).join();
 
+  void _goBackToCredentialStep(BuildContext context, AuthState state) {
+    ref.read(authControllerProvider.notifier).prepareFreshCredentialFlow();
+    if (!context.mounted) return;
+    final target = state.otpIntent == OtpIntent.register
+        ? '/auth/register'
+        : '/auth/login';
+    context.go(target);
+  }
+
   void _onDigitChanged(int index, String value) {
     final digit = value.replaceAll(RegExp(r'[^0-9]'), '');
     if (digit.isEmpty) {
@@ -86,6 +95,9 @@ class _VerifyOtpScreenState extends ConsumerState<VerifyOtpScreen> {
     final auth = ref.read(authControllerProvider.notifier);
     final theme = Theme.of(context);
     final email = authState.pendingEmail ?? '';
+    final backLabel = authState.otpIntent == OtpIntent.register
+        ? l10n.authVerifyBackToRegister
+        : l10n.authVerifyBackToLogin;
 
     return Scaffold(
       body: ClinovaBackdrop(
@@ -98,10 +110,8 @@ class _VerifyOtpScreenState extends ConsumerState<VerifyOtpScreen> {
                 child: Row(
                   children: [
                     IconButton.filledTonal(
-                      onPressed: () {
-                        auth.prepareFreshCredentialFlow();
-                        context.go('/auth/login');
-                      },
+                      onPressed: () =>
+                          _goBackToCredentialStep(context, authState),
                       icon: const Icon(Icons.arrow_back_rounded),
                     ),
                     const Spacer(),
@@ -118,12 +128,10 @@ class _VerifyOtpScreenState extends ConsumerState<VerifyOtpScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                   TextButton.icon(
-                    onPressed: () {
-                      auth.prepareFreshCredentialFlow();
-                      context.go('/auth/login');
-                    },
+                    onPressed: () =>
+                        _goBackToCredentialStep(context, authState),
                     icon: const Icon(Icons.arrow_back_rounded, size: 18),
-                    label: Text(l10n.authVerifyBackToLogin),
+                    label: Text(backLabel),
                   ),
                   const ClinovaLogo(
                     size: 46,
@@ -143,6 +151,14 @@ class _VerifyOtpScreenState extends ConsumerState<VerifyOtpScreen> {
                         ? l10n.authVerifyEmailMissing
                         : l10n.authVerifyEmailBody(email),
                     style: theme.textTheme.bodyLarge?.copyWith(color: _muted),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    l10n.authOtpSixDigitInstruction,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: _navy,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   Container(
@@ -331,10 +347,8 @@ class _VerifyOtpScreenState extends ConsumerState<VerifyOtpScreen> {
                         const Divider(height: 32),
                         Center(
                           child: TextButton(
-                            onPressed: () {
-                              auth.prepareFreshCredentialFlow();
-                              context.go('/auth/login');
-                            },
+                            onPressed: () =>
+                                _goBackToCredentialStep(context, authState),
                             child: Text(l10n.authChangeEmail),
                           ),
                         ),

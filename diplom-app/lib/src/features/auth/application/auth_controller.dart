@@ -402,6 +402,7 @@ class AuthController extends StateNotifier<AuthState> {
     required String password,
     required String firstName,
     required String lastName,
+    required String phoneNumber,
   }) async {
     state = state.copyWith(isBusy: true, clearError: true);
     try {
@@ -411,6 +412,7 @@ class AuthController extends StateNotifier<AuthState> {
                 password: password,
                 firstName: firstName,
                 lastName: lastName,
+                phoneNumber: phoneNumber,
               );
       final token = response['accessToken']?.toString() ?? '';
       if (token.isNotEmpty) {

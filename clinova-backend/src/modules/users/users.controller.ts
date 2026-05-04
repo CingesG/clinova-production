@@ -35,9 +35,14 @@ class UpdateMyProfileDto {
   @IsString()
   nickname?: string;
 
+  /** Legacy JSON key — prefer phoneNumber on new clients. */
   @IsOptional()
   @IsString()
   phone?: string;
+
+  @IsOptional()
+  @IsString()
+  phoneNumber?: string;
 
   @IsOptional()
   @IsString()

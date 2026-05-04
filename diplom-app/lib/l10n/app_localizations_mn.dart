@@ -460,6 +460,13 @@ class AppLocalizationsMn extends AppLocalizations {
   String get authVerifyBackToLogin => 'Нэвтрэх рүү буцах';
 
   @override
+  String get authVerifyBackToRegister => 'Бүртгэл рүү буцах';
+
+  @override
+  String get authOtpSixDigitInstruction =>
+      '6 оронтой баталгаажуулах кодоо оруулна уу';
+
+  @override
   String get authOtpExtraSecurityBadge => 'Нэмэлт аюулгүй алхам';
 
   @override

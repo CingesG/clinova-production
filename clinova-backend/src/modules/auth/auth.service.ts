@@ -19,6 +19,10 @@ import type { SignOptions } from 'jsonwebtoken';
 import { OAuth2Client, type TokenPayload } from 'google-auth-library';
 
 import { MailerService } from '../common/mailer.service';
+import {
+  MONGOLIA_PHONE_INVALID_MESSAGE,
+  normalizeOptionalMongoliaPhone,
+} from '../common/mongolia-phone.util';
 import { PrismaService } from '../common/prisma.service';
 import { CurrentUserPayload } from '../common/current-user.decorator';
 
@@ -26,7 +30,8 @@ type RequestOtpInput = {
   email: string;
   firstName?: string;
   lastName?: string;
-  phone?: string;
+  /** Optional; normalized +976xxxxxxxx when present. */
+  phoneNumber?: string;
 };
 
 type RegisterInput = RequestOtpInput & {
@@ -388,6 +393,18 @@ export class AuthService {
   private async createPatientUser(input: RequestOtpInput, password?: string) {
     const passwordHash = password ? await bcrypt.hash(password, 10) : null;
 
+    let phoneNormalized: string | undefined;
+    if (
+      input.phoneNumber != null &&
+      String(input.phoneNumber).trim().length > 0
+    ) {
+      const norm = normalizeOptionalMongoliaPhone(input.phoneNumber);
+      if (norm === null) {
+        throw new BadRequestException(MONGOLIA_PHONE_INVALID_MESSAGE);
+      }
+      phoneNormalized = norm;
+    }
+
     return this.prisma.user.create({
       data: {
         email: this.normalizeEmail(input.email),
@@ -398,7 +415,7 @@ export class AuthService {
         status: UserStatus.PENDING,
         firstName: input.firstName?.trim() || 'Clinova',
         lastName: input.lastName?.trim() || 'Patient',
-        phone: input.phone?.trim(),
+        phoneNumber: phoneNormalized,
         patientProfile: {
           create: {},
         },
@@ -426,7 +443,7 @@ export class AuthService {
     firstName: string | null;
     lastName: string | null;
     nickname: string | null;
-    phone: string | null;
+    phoneNumber: string | null;
     avatarUrl: string | null;
     branch: { id: string; name: string } | null;
     patientProfile?: { id: string } | null;
@@ -440,7 +457,8 @@ export class AuthService {
       firstName: user.firstName,
       lastName: user.lastName,
       nickname: user.nickname,
-      phone: user.phone,
+      phoneNumber: user.phoneNumber,
+      phone: user.phoneNumber,
       avatarUrl: user.avatarUrl,
       branch: user.branch,
       patientProfileId: user.patientProfile?.id ?? null,
@@ -614,6 +632,26 @@ export class AuthService {
 
     if (!user) {
       user = await this.createPatientUser(input);
+    }
+
+    if (
+      user.role === Role.PATIENT &&
+      input.phoneNumber != null &&
+      String(input.phoneNumber).trim().length > 0
+    ) {
+      const norm = normalizeOptionalMongoliaPhone(input.phoneNumber);
+      if (norm === null) {
+        throw new BadRequestException(MONGOLIA_PHONE_INVALID_MESSAGE);
+      }
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: { phoneNumber: norm },
+        include: {
+          branch: true,
+          patientProfile: true,
+          doctorProfile: true,
+        },
+      });
     }
 
     if (

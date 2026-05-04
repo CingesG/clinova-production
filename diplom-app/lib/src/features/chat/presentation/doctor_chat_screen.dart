@@ -13,6 +13,7 @@ import 'package:record/record.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/config/app_config.dart';
+import '../../../core/formatting/contact_display.dart';
 import '../../../core/localization/context_l10n.dart';
 import '../../../core/navigation/go_router_pop.dart';
 import '../../../core/media/clinova_gallery_image.dart';
@@ -138,9 +139,18 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
 
   String _contactSubtitle(Map<String, dynamic> contact, bool isDoctorRole, String locale) {
     if (isDoctorRole) {
-      final s = contact['serviceName']?.toString().trim() ?? '';
-      if (s.isNotEmpty) return _localizedSpecialty(s, locale);
-      return 'Өвчтөн';
+      final raw = contact['user'];
+      Map<String, dynamic>? u;
+      if (raw is Map<String, dynamic>) {
+        u = raw;
+      } else if (raw is Map) {
+        u = Map<String, dynamic>.from(raw);
+      }
+      final phoneLabel = displayMnRegisteredPhone(u);
+      final svc = contact['serviceName']?.toString().trim() ?? '';
+      final specialty =
+          svc.isNotEmpty ? _localizedSpecialty(svc, locale) : 'Өвчтөн';
+      return '$specialty · Өвчтөний утас: $phoneLabel';
     }
     final dept = contact['department'];
     final deptName = dept is Map<String, dynamic>

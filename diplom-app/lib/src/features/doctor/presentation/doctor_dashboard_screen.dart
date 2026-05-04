@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/formatting/contact_display.dart';
 import '../../../core/localization/context_l10n.dart';
 import '../../../core/network/clinova_api.dart';
 import '../../../core/widgets/clinova_backdrop.dart';
@@ -65,6 +66,7 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
   void _showAppointmentDetails(Map<String, dynamic> appointment) {
     final patient = appointment['patient'] as Map? ?? const {};
     final user = patient['user'] as Map? ?? const {};
+    final userMap = Map<String, dynamic>.from(user);
     final service = appointment['service'] as Map? ?? const {};
     final branch = appointment['branch'] as Map? ?? const {};
     final startsAt = appointment['startsAt']?.toString() ?? '';
@@ -84,7 +86,9 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
             const SizedBox(height: 6),
             Text('Имэйл: ${user['email'] ?? '—'}'),
             const SizedBox(height: 6),
-            Text('Утас: ${user['phone'] ?? '—'}'),
+            Text(
+              'Өвчтөний утас: ${displayMnRegisteredPhone(userMap)}',
+            ),
             const SizedBox(height: 6),
             Text('Үйлчилгээ: ${service['name'] ?? '—'}'),
             const SizedBox(height: 6),
@@ -777,6 +781,7 @@ class _AppointmentList extends StatelessWidget {
         final isBusy = busyAppointmentIds.contains(appointmentId);
         final patient = appointment['patient'] as Map? ?? const {};
         final user = patient['user'] as Map? ?? const {};
+        final patientPhoneMap = Map<String, dynamic>.from(user);
         final service = appointment['service'] as Map? ?? const {};
         final branch = appointment['branch'] as Map? ?? const {};
         final status = (appointment['status']?.toString() ?? 'PENDING').toUpperCase();
@@ -825,6 +830,11 @@ class _AppointmentList extends StatelessWidget {
               const SizedBox(height: 4),
               Text(
                 'Салбар: ${branch['name'] ?? '—'}',
+                style: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Өвчтөний утас: ${displayMnRegisteredPhone(patientPhoneMap)}',
                 style: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
               ),
               const SizedBox(height: 10),

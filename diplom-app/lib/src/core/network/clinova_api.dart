@@ -97,6 +97,7 @@ class ClinovaApi {
     required String password,
     required String firstName,
     required String lastName,
+    required String phoneNumber,
   }) async {
     final response = await _dio.post(
       '/auth/register',
@@ -105,6 +106,7 @@ class ClinovaApi {
         'password': password,
         'firstName': firstName,
         'lastName': lastName,
+        'phoneNumber': phoneNumber,
       },
     );
     return _asMap(response.data);
@@ -137,6 +139,11 @@ class ClinovaApi {
     final a = _absolutizeUrl(raw['avatarUrl']?.toString());
     if (a != null) {
       raw['avatarUrl'] = a;
+    }
+    final pn = raw['phoneNumber']?.toString().trim();
+    final legacy = raw['phone']?.toString().trim();
+    if ((pn == null || pn.isEmpty) && legacy != null && legacy.isNotEmpty) {
+      raw['phoneNumber'] = legacy;
     }
     return raw;
   }

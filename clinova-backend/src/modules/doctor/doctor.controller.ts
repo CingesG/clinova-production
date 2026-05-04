@@ -45,6 +45,10 @@ class DoctorDto {
   @IsString()
   phone?: string;
 
+  @IsOptional()
+  @IsString()
+  phoneNumber?: string;
+
   @IsString()
   branchId!: string;
 

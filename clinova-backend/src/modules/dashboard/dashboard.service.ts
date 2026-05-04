@@ -6,6 +6,7 @@ import { AppointmentStatus, Role } from '@prisma/client';
 
 import { PrismaService } from '../common/prisma.service';
 import { NotificationService } from '../notification/notification.service';
+import { USER_PUBLIC_SELECT } from '../common/user-public-select';
 
 @Injectable()
 export class DashboardService {
@@ -186,7 +187,9 @@ export class DashboardService {
           include: {
             patient: {
               include: {
-                user: true,
+                user: {
+                  select: USER_PUBLIC_SELECT,
+                },
               },
             },
             service: true,
@@ -203,7 +206,9 @@ export class DashboardService {
           include: {
             patient: {
               include: {
-                user: true,
+                user: {
+                  select: USER_PUBLIC_SELECT,
+                },
               },
             },
             service: true,
@@ -343,7 +348,9 @@ export class DashboardService {
     const patient = await this.prisma.patientProfile.findUnique({
       where: { userId },
       include: {
-        user: true,
+        user: {
+          select: USER_PUBLIC_SELECT,
+        },
       },
     });
     if (!patient) {
@@ -364,7 +371,9 @@ export class DashboardService {
         include: {
           doctor: {
             include: {
-              user: true,
+              user: {
+                select: USER_PUBLIC_SELECT,
+              },
               department: true,
             },
           },
@@ -382,7 +391,9 @@ export class DashboardService {
         include: {
           doctor: {
             include: {
-              user: true,
+              user: {
+                select: USER_PUBLIC_SELECT,
+              },
               department: true,
             },
           },
@@ -397,7 +408,7 @@ export class DashboardService {
     const completionFields = [
       patient.user.firstName,
       patient.user.lastName,
-      patient.user.phone,
+      patient.user.phoneNumber,
       patient.address,
       patient.emergencyContactName,
       patient.emergencyContactPhone,

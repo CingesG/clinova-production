@@ -11,13 +11,19 @@ import {
   UserStatus,
 } from '@prisma/client';
 
+import {
+  MONGOLIA_PHONE_INVALID_MESSAGE,
+  normalizeOptionalMongoliaPhone,
+} from '../common/mongolia-phone.util';
 import { PrismaService } from '../common/prisma.service';
 
 type UpdateProfileInput = {
   firstName?: string;
   lastName?: string;
   nickname?: string | null;
+  /** Legacy body key — prefer phoneNumber. */
   phone?: string;
+  phoneNumber?: string;
   avatarUrl?: string | null;
   dateOfBirth?: string;
   gender?: string;
@@ -39,6 +45,12 @@ type AdminUserUpdateInput = {
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private stripPassword(user: Record<string, unknown>) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { passwordHash, ...safe } = user;
+    return safe;
+  }
+
   async me(userId: string) {
     return this.findById(userId);
   }
@@ -51,6 +63,19 @@ export class UsersService {
 
     if (!user) {
       throw new NotFoundException('User not found.');
+    }
+
+    const rawPhone = input.phoneNumber ?? input.phone;
+    let phoneData: string | null | undefined;
+    if (rawPhone !== undefined) {
+      if (rawPhone === null || String(rawPhone).trim() === '') {
+        phoneData = null;
+      } else {
+        const norm = normalizeOptionalMongoliaPhone(String(rawPhone));
+        if (norm === null)
+          throw new BadRequestException(MONGOLIA_PHONE_INVALID_MESSAGE);
+        phoneData = norm;
+      }
     }
 
     await this.prisma.$transaction(async (tx) => {
@@ -66,7 +91,7 @@ export class UsersService {
                   String(input.nickname).trim().length === 0
                 ? null
                 : String(input.nickname).trim(),
-          phone: input.phone,
+          ...(phoneData !== undefined ? { phoneNumber: phoneData } : {}),
           avatarUrl:
             input.avatarUrl === undefined ? undefined : input.avatarUrl,
         },
@@ -119,7 +144,7 @@ export class UsersService {
         { email: { contains: filters.search, mode: 'insensitive' } },
         { firstName: { contains: filters.search, mode: 'insensitive' } },
         { lastName: { contains: filters.search, mode: 'insensitive' } },
-        { phone: { contains: filters.search, mode: 'insensitive' } },
+        { phoneNumber: { contains: filters.search, mode: 'insensitive' } },
       ];
     }
 
@@ -144,8 +169,12 @@ export class UsersService {
       this.prisma.user.count({ where }),
     ]);
 
+    const safeItems = items.map((u) =>
+      this.stripPassword(u as unknown as Record<string, unknown>),
+    );
+
     return {
-      items,
+      items: safeItems,
       total,
       page,
       pageSize,
@@ -230,7 +259,7 @@ export class UsersService {
       throw new NotFoundException('User not found.');
     }
 
-    return user;
+    return this.stripPassword(user as unknown as Record<string, unknown>);
   }
 
   private async ensureBranch(id: string) {
