@@ -6,6 +6,7 @@ class AppUser {
     required this.email,
     required this.role,
     this.status,
+    this.authProvider,
     this.firstName,
     this.lastName,
     this.nickname,
@@ -20,6 +21,8 @@ class AppUser {
   final String email;
   final String role;
   final String? status;
+  /// `EMAIL`, `GOOGLE`, … from backend `/auth/me`.
+  final String? authProvider;
   final String? firstName;
   final String? lastName;
   final String? nickname;
@@ -52,6 +55,7 @@ class AppUser {
       email: json['email']?.toString() ?? '',
       role: json['role']?.toString() ?? 'PATIENT',
       status: json['status']?.toString(),
+      authProvider: json['authProvider']?.toString(),
       firstName: json['firstName']?.toString(),
       lastName: json['lastName']?.toString(),
       nickname: json['nickname']?.toString(),

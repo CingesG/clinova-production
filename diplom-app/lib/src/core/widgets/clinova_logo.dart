@@ -96,12 +96,13 @@ class ClinovaLogo extends StatelessWidget {
 
   Widget _wrapVariant(Widget child, LogoVariant variant) {
     if (variant != LogoVariant.glass) return child;
+    // Subtle frosted chip on dark heroes only — keep neutrals (no teal/green cast).
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.1),
+        color: Colors.white.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
       ),
       child: child,
     );

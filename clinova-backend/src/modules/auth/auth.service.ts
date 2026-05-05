@@ -47,6 +47,17 @@ const USER_INCLUDE = {
 const OTP_EMAIL_FAILED_MN =
   'Баталгаажуулах код илгээхэд алдаа гарлаа. Имэйл тохиргоог шалгана уу.';
 
+const OTP_EMAIL_SENT_TO_INBOX_MN =
+  'Баталгаажуулах код таны имэйл рүү илгээгдлээ.';
+
+const CLINOVA_LOCAL_DOMAIN = '@clinova.local';
+
+const REGISTER_CLINOVA_LOCAL_REQUIRES_SKIP_MN =
+  '@clinova.local хаяг руу имэйл илгээх боломжгүй. Жинхэнэ имэйл ашиглана уу, эсвэл хөгжүүлэлтэд REGISTER_SKIP_EMAIL_VERIFICATION=true тохируулна уу.';
+
+const REQUEST_OTP_CLINOVA_LOCAL_MN =
+  '@clinova.local хаягт баталгаажуулах имэйл илгээхгүй. Demo данснуудыг нууц үгээр нэвтэрнэ үү.';
+
 /** Temporary maintenance delete — must match body email; do not broaden. */
 const MAINTENANCE_DELETE_ALLOWED_EMAIL = 'gantumurchinges261@gmail.com';
 const MAINTENANCE_DELETE_PROTECTED_EMAIL = 'chinges_chinges@icloud.com';
@@ -56,21 +67,6 @@ export class AuthService {
   private readonly logger = new Logger(AuthService.name);
   private bootstrapSeeded = false;
   private bootstrapSeedPromise?: Promise<void>;
-  private readonly doctorDemoRoster: Array<{
-    email: string;
-    firstName: string;
-    lastName: string;
-    avatarUrl: string;
-  }> = [
-    { email: 'demo.doctor01@clinova.local', firstName: 'Naran', lastName: 'Erdene', avatarUrl: '/uploads/image/doctor-01.png' },
-    { email: 'demo.doctor02@clinova.local', firstName: 'Saran', lastName: 'Tuya', avatarUrl: '/uploads/image/doctor-02.png' },
-    { email: 'demo.doctor03@clinova.local', firstName: 'Ariunaa', lastName: 'Munkh', avatarUrl: '/uploads/image/doctor-03.png' },
-    { email: 'demo.doctor04@clinova.local', firstName: 'Bat', lastName: 'Erdene', avatarUrl: '/uploads/image/doctor-04.png' },
-    { email: 'demo.doctor05@clinova.local', firstName: 'Enkh', lastName: 'Amgalan', avatarUrl: '/uploads/image/doctor-05.png' },
-    { email: 'demo.doctor06@clinova.local', firstName: 'Oyun', lastName: 'Khulan', avatarUrl: '/uploads/image/doctor-06.png' },
-    { email: 'demo.doctor07@clinova.local', firstName: 'Gan', lastName: 'Bold', avatarUrl: '/uploads/image/doctor-07.png' },
-    { email: 'demo.doctor08@clinova.local', firstName: 'Temuulen', lastName: 'Sukh', avatarUrl: '/uploads/image/doctor-08.png' },
-  ];
 
   constructor(
     private readonly jwtService: JwtService,
@@ -86,7 +82,15 @@ export class AuthService {
       return;
     }
     this.bootstrapSeedPromise = (async () => {
-      await this.ensureBootstrapAdmin();
+      await this.ensureBootstrapAdminOnly();
+      const demoOnBoot =
+        this.config
+          .get<string>('SEED_DEMO_ACCOUNTS_ON_BOOT', 'false')
+          .toLowerCase() === 'true';
+      if (demoOnBoot) {
+        await this.ensureDemoPatientAccount();
+        await this.ensureDemoDoctorAccount();
+      }
       this.bootstrapSeeded = true;
     })();
     try {
@@ -103,7 +107,25 @@ export class AuthService {
   private normalizeLoginIdentifier(value: string) {
     const normalized = this.normalizeEmail(value);
     if (normalized.includes('@')) return normalized;
-    return `${normalized}@clinova.local`;
+    return `${normalized}${CLINOVA_LOCAL_DOMAIN}`;
+  }
+
+  /** Seeded demo addresses — cannot receive real mailbox delivery. */
+  private isClinovaLocalMailbox(email: string): boolean {
+    return this.normalizeEmail(email).endsWith(CLINOVA_LOCAL_DOMAIN);
+  }
+
+  private isStaffPasswordBypassRole(role: Role): boolean {
+    return role === Role.ADMIN || role === Role.DOCTOR || role === Role.STAFF;
+  }
+
+  /** True when staff may complete password login without email OTP. */
+  private passwordOnlyStaffLoginEnabled(): boolean {
+    return (
+      this.config
+        .get<string>('ALLOW_PASSWORD_ONLY_STAFF_LOGIN', 'false')
+        .toLowerCase() === 'true'
+    );
   }
 
   private async audit(
@@ -120,52 +142,58 @@ export class AuthService {
     });
   }
 
-  private async ensureBootstrapAdmin() {
+  /**
+   * Ensures the production admin row exists. Never overwrites an existing admin password.
+   * Demo doctors/patients come from `npm run prisma:seed`, not from app startup.
+   */
+  private async ensureBootstrapAdminOnly() {
     const email = this.normalizeEmail(
       this.config.get<string>('DEFAULT_ADMIN_EMAIL') ??
         'chinges_chinges@icloud.com',
     );
-    const password =
-      this.config.get<string>('DEFAULT_ADMIN_PASSWORD') ?? 'ClinovaAdmin123!';
-
     const existing = await this.prisma.user.findUnique({
       where: { email },
     });
 
-    if (!existing) {
-      const passwordHash = await bcrypt.hash(password, 10);
-      await this.prisma.user.create({
-        data: {
-          email,
-          passwordHash,
-          role: Role.ADMIN,
-          status: UserStatus.ACTIVE,
-          authProvider: AuthProvider.EMAIL,
-          emailVerified: true,
-          firstName: 'Chinges',
-          lastName: 'Admin',
-        },
-      });
+    if (existing) {
+      if (existing.role !== Role.ADMIN) {
+        await this.prisma.user.update({
+          where: { id: existing.id },
+          data: { role: Role.ADMIN, status: UserStatus.ACTIVE },
+        });
+      }
+      return;
     }
 
-    await this.ensureDemoAccounts();
+    const password = this.config.get<string>('DEFAULT_ADMIN_PASSWORD')?.trim();
+    if (!password || password.length < 12) {
+      throw new Error(
+        'DEFAULT_ADMIN_PASSWORD must be set (minimum 12 characters) to create the initial admin account. Run `npm run prisma:seed` or set the variable.',
+      );
+    }
 
-    return this.prisma.user.findUniqueOrThrow({
-      where: { email },
+    const passwordHash = await bcrypt.hash(password, 10);
+    await this.prisma.user.create({
+      data: {
+        email,
+        passwordHash,
+        role: Role.ADMIN,
+        status: UserStatus.ACTIVE,
+        authProvider: AuthProvider.EMAIL,
+        emailVerified: true,
+        firstName: 'Chinges',
+        lastName: 'Admin',
+      },
     });
-  }
-
-  private async ensureDemoAccounts() {
-    await this.ensureDemoPatientAccount();
-    await this.ensureDemoDoctorAccount();
-    await this.ensureDoctorDemoRosterAccounts();
+    this.logger.log(`Admin account created for ${email}`);
   }
 
   private async ensureDemoPatientAccount() {
     const email = this.normalizeEmail(
       this.config.get<string>('DEMO_PATIENT_EMAIL') ?? 'demo.patient@clinova.local',
     );
-    const password = this.config.get<string>('DEMO_PATIENT_PASSWORD') ?? 'DemoPatient123!';
+    const password =
+      this.config.get<string>('DEMO_PATIENT_PASSWORD') ?? 'ClinovaPatient123!';
 
     const existing = await this.prisma.user.findUnique({
       where: { email },
@@ -219,7 +247,8 @@ export class AuthService {
     const email = this.normalizeEmail(
       this.config.get<string>('DEMO_DOCTOR_EMAIL') ?? 'demo.doctor@clinova.local',
     );
-    const password = this.config.get<string>('DEMO_DOCTOR_PASSWORD') ?? 'DemoDoctor123!';
+    const password =
+      this.config.get<string>('DEMO_DOCTOR_PASSWORD') ?? 'ClinovaDoctor123!';
 
     const [branch, department] = await Promise.all([
       this.prisma.branch.findFirst({ orderBy: { createdAt: 'asc' } }),
@@ -296,104 +325,6 @@ export class AuthService {
     });
   }
 
-  private async ensureDoctorDemoRosterAccounts() {
-    const [branch, department] = await Promise.all([
-      this.prisma.branch.findFirst({ orderBy: { createdAt: 'asc' } }),
-      this.prisma.department.findFirst({ orderBy: { createdAt: 'asc' } }),
-    ]);
-    if (!branch || !department) {
-      return;
-    }
-    const defaultService = await this.prisma.service.findFirst({
-      where: { branchId: branch.id },
-      orderBy: { createdAt: 'asc' },
-      select: { id: true },
-    });
-
-    const basePassword =
-      this.config.get<string>('DEMO_DOCTOR_PASSWORD') ?? 'DemoDoctor123!';
-    const passwordHash = await bcrypt.hash(basePassword, 10);
-
-    for (const demo of this.doctorDemoRoster) {
-      const email = this.normalizeEmail(demo.email);
-      const existing = await this.prisma.user.findUnique({
-        where: { email },
-        include: { doctorProfile: true },
-      });
-
-      const user = existing
-        ? await this.prisma.user.update({
-            where: { id: existing.id },
-            data: {
-              role: Role.DOCTOR,
-              status: UserStatus.ACTIVE,
-              authProvider: AuthProvider.EMAIL,
-              emailVerified: true,
-              firstName: demo.firstName,
-              lastName: demo.lastName,
-              avatarUrl: demo.avatarUrl,
-              branchId: branch.id,
-            },
-          })
-        : await this.prisma.user.create({
-            data: {
-              email,
-              passwordHash,
-              role: Role.DOCTOR,
-              status: UserStatus.ACTIVE,
-              authProvider: AuthProvider.EMAIL,
-              emailVerified: true,
-              firstName: demo.firstName,
-              lastName: demo.lastName,
-              avatarUrl: demo.avatarUrl,
-              branchId: branch.id,
-            },
-          });
-
-      const doctorProfile = existing?.doctorProfile
-        ? await this.prisma.doctorProfile.update({
-            where: { id: existing.doctorProfile.id },
-            data: {
-              branchId: branch.id,
-              departmentId: department.id,
-              bio: 'Demo doctor account',
-              experienceYears: 4,
-              consultationFee: 50000,
-              avatarUrl: demo.avatarUrl,
-              active: true,
-            },
-          })
-        : await this.prisma.doctorProfile.create({
-            data: {
-              userId: user.id,
-              branchId: branch.id,
-              departmentId: department.id,
-              bio: 'Demo doctor account',
-              experienceYears: 4,
-              consultationFee: 50000,
-              avatarUrl: demo.avatarUrl,
-              active: true,
-            },
-          });
-
-      if (defaultService) {
-        await this.prisma.doctorService.upsert({
-          where: {
-            doctorId_serviceId: {
-              doctorId: doctorProfile.id,
-              serviceId: defaultService.id,
-            },
-          },
-          update: {},
-          create: {
-            doctorId: doctorProfile.id,
-            serviceId: defaultService.id,
-          },
-        });
-      }
-    }
-  }
-
   private async createPatientUser(input: RequestOtpInput, password?: string) {
     const passwordHash = password ? await bcrypt.hash(password, 10) : null;
 
@@ -444,6 +375,7 @@ export class AuthService {
     email: string;
     role: Role;
     status: UserStatus;
+    authProvider: AuthProvider;
     firstName: string | null;
     lastName: string | null;
     nickname: string | null;
@@ -458,6 +390,7 @@ export class AuthService {
       email: user.email,
       role: user.role,
       status: user.status,
+      authProvider: user.authProvider,
       firstName: user.firstName,
       lastName: user.lastName,
       nickname: user.nickname,
@@ -550,7 +483,7 @@ export class AuthService {
     if (mailResult.delivered) {
       await this.audit(userId, 'OTP_SENT', { purpose });
       return {
-        message: 'Verification code sent.',
+        message: OTP_EMAIL_SENT_TO_INBOX_MN,
         expiresInSeconds: 600,
         emailDelivered: true,
       };
@@ -579,7 +512,8 @@ export class AuthService {
     }
 
     return {
-      message: 'Verification code sent.',
+      message:
+        'If an account exists for this email, we sent a 6-digit verification code.',
       expiresInSeconds: 600,
       emailDelivered: false,
     };
@@ -625,6 +559,9 @@ export class AuthService {
     await this.ensureBootstrapSeeded();
 
     const email = this.normalizeEmail(input.email);
+    if (this.isClinovaLocalMailbox(email)) {
+      throw new BadRequestException(REQUEST_OTP_CLINOVA_LOCAL_MN);
+    }
     let user = await this.prisma.user.findUnique({
       where: { email },
       include: {
@@ -886,6 +823,14 @@ export class AuthService {
     await this.ensureBootstrapSeeded();
 
     const email = this.normalizeEmail(input.email);
+    const skipRegisterOtp =
+      this.config
+        .get<string>('REGISTER_SKIP_EMAIL_VERIFICATION', 'false')
+        .toLowerCase() === 'true';
+    if (this.isClinovaLocalMailbox(email) && !skipRegisterOtp) {
+      throw new BadRequestException(REGISTER_CLINOVA_LOCAL_REQUIRES_SKIP_MN);
+    }
+
     const existing = await this.prisma.user.findUnique({
       where: { email },
     });
@@ -901,10 +846,6 @@ export class AuthService {
       input.password,
     );
 
-    const skipRegisterOtp =
-      this.config
-        .get<string>('REGISTER_SKIP_EMAIL_VERIFICATION', 'false')
-        .toLowerCase() === 'true';
     if (skipRegisterOtp) {
       await this.prisma.user.update({
         where: { id: user.id },
@@ -928,9 +869,10 @@ export class AuthService {
     );
 
     return {
-      message: 'Patient account created. Verification code sent.',
+      message: otpResult.message,
       expiresInSeconds: otpResult.expiresInSeconds,
       debugCode: otpResult.debugCode,
+      emailDelivered: otpResult.emailDelivered,
     };
   }
 
@@ -944,13 +886,13 @@ export class AuthService {
     });
 
     if (!user?.passwordHash) {
-      await this.audit(null, 'LOGIN_FAILED', { email });
+      await this.audit(null, 'LOGIN_FAILED', { reason: 'invalid_credentials' });
       throw new UnauthorizedException('Email or password is incorrect.');
     }
 
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) {
-      await this.audit(user.id, 'LOGIN_FAILED', { email });
+      await this.audit(user.id, 'LOGIN_FAILED', { reason: 'invalid_credentials' });
       throw new UnauthorizedException('Email or password is incorrect.');
     }
 
@@ -964,14 +906,16 @@ export class AuthService {
       throw new ForbiddenException('This account is not active.');
     }
 
-    const allowPasswordOnlyStaffLogin =
-      this.config.get<string>('ALLOW_PASSWORD_ONLY_STAFF_LOGIN', 'true').toLowerCase() ===
-      'true';
-    if (
-      allowPasswordOnlyStaffLogin &&
-      (user.role === Role.ADMIN || user.role === Role.DOCTOR || user.role === Role.STAFF)
-    ) {
+    const allowPasswordOnlyStaffLogin = this.passwordOnlyStaffLoginEnabled();
+    if (allowPasswordOnlyStaffLogin && this.isStaffPasswordBypassRole(user.role)) {
       await this.audit(user.id, 'LOGIN_PASSWORD_ONLY_SUCCESS', { role: user.role });
+      return this.issueTokenPair(user.id);
+    }
+
+    if (this.isClinovaLocalMailbox(email)) {
+      await this.audit(user.id, 'LOGIN_CLINOVA_LOCAL_PASSWORD_ONLY', {
+        role: user.role,
+      });
       return this.issueTokenPair(user.id);
     }
 

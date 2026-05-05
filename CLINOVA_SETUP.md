@@ -46,12 +46,15 @@ diplom/
 
 ## 4) API endpoints
 
+- `POST /auth/register`
 - `POST /auth/request-otp`
 - `POST /auth/verify-otp`
-- `POST /auth/admin-login`
+- `POST /auth/password-login`
+- `POST /auth/refresh`
+- `GET /auth/me`
 - `GET /appointments/slots`
 - `POST /appointments`
-- `POST /ai-agent/triage`
+- `POST /api/ai/triage` (ба `/api/ai/chat`)
 
 ## 5) AI agent logic
 
@@ -96,9 +99,9 @@ Defined in `clinova-backend/.env.example`:
 - `SMTP_USER`
 - SMTP mail auth (see **`SMTP_*`** keys in `.env.example`)
 
-## Admin credentials
+## Admin account
 
-- No demo credentials are hardcoded anymore.
-- Set these values in backend `.env`:
-  - `ADMIN_EMAIL`
-  - `ADMIN_PASSWORD`
+- Үндсэн admin имэйл: **`chinges_chinges@icloud.com`** (`DEFAULT_ADMIN_EMAIL`).
+- Хэрэглэгч аль хэдийн байвал seed/bootstrap **нууцыг хэзээ ч өөрчлөхгүй**.
+- Анх удаа л үүсгэхийн тулд `.env` дээр **`DEFAULT_ADMIN_PASSWORD`** (хамгийн багадаа 12 тэмдэгт) заана.
+- Бүх demo эмч/салбар зэргийг **`npm run prisma:seed`** ажиллуулж idempotent болгоно. Эмчийн нууц `clinova-backend/seed-output/doctor-credentials.local.json` файлд бичигдэнэ (gitignored).

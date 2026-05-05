@@ -36,7 +36,7 @@ class SplashScreen extends StatelessWidget {
                 child: const Center(
                   child: ClinovaLogo(
                     size: 72,
-                    variant: LogoVariant.glass,
+                    variant: LogoVariant.dark,
                     showText: false,
                   ),
                 ),

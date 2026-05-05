@@ -20,7 +20,17 @@ flutter pub get
 export API_BASE_URL="${API_BASE_URL:-https://clinova-api-production.onrender.com}"
 export SITE_BASE_URL="${SITE_BASE_URL:-https://clinova-production.vercel.app}"
 
+if [[ "${VERCEL:-}" == "1" ]] && [[ -z "${GOOGLE_CLIENT_ID:-}" ]]; then
+  echo "Error: Vercel Flutter web билдэд GOOGLE_CLIENT_ID environment variable заавал (OAuth Web client ID)." >&2
+  echo "Vercel: Settings → Environment Variables → GOOGLE_CLIENT_ID=xxxx.apps.googleusercontent.com" >&2
+  exit 1
+fi
+
 bash tool/render_seo_assets.sh
+
+if [[ -n "${GOOGLE_CLIENT_ID:-}" ]]; then
+  bash tool/inject_google_signin_meta.sh "$ROOT" "${GOOGLE_CLIENT_ID}"
+fi
 
 DEFINES=(
   --dart-define=API_BASE_URL="${API_BASE_URL}"
@@ -37,3 +47,4 @@ for key in FIREBASE_WEB_API_KEY FIREBASE_WEB_AUTH_DOMAIN FIREBASE_WEB_PROJECT_ID
 done
 
 flutter build web --release "${DEFINES[@]}"
+echo "Build complete: build/web (PWA: manifest, icons, flutter_service_worker.js)."

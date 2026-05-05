@@ -1,9 +1,12 @@
 import 'package:diplom_app/l10n/app_localizations.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/formatting/contact_display.dart';
 import '../../../core/localization/context_l10n.dart';
+import '../../../core/media/clinova_gallery_image.dart';
 import '../../../core/network/clinova_api.dart';
 import '../../../core/widgets/clinova_backdrop.dart';
 import '../../auth/application/auth_controller.dart';
@@ -108,7 +111,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
     final role = user['role']?.toString() ?? '';
     if (role != 'DOCTOR') return;
     final email = user['email']?.toString() ?? '';
-    final controller = TextEditingController(text: 'DemoDoctor123!');
+    final controller = TextEditingController(text: 'ClinovaDoctor123!');
     final newPassword = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -409,7 +412,10 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
     final avatarUrl = TextEditingController();
     final bio = TextEditingController();
     final fee = TextEditingController(text: '60000');
+    final phone = TextEditingController();
+    final experienceYears = TextEditingController(text: '5');
     bool autoGeneratePassword = true;
+    Uint8List? pickedAvatarBytes;
     String? branchId = branches.isNotEmpty
         ? branches.first['id'].toString()
         : null;
@@ -420,9 +426,13 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
         ? services.first['id'].toString()
         : null;
 
+    final parentCtx = context;
+    final snack = ScaffoldMessenger.of(parentCtx);
+
     await showDialog<void>(
       context: context,
       builder: (dialogContext) {
+        bool isSubmitting = false;
         return StatefulBuilder(
           builder: (context, setLocalState) {
             final filteredServices = services
@@ -438,30 +448,53 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
             }
 
             return AlertDialog(
-              title: Text(loc.adminCreateDoctorTitle),
-              content: SingleChildScrollView(
-                child: Column(
+              insetPadding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
+              title: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.medical_information_outlined,
+                    color: Theme.of(context).colorScheme.primary,
+                    size: 26,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text(loc.adminCreateDoctorTitle)),
+                ],
+              ),
+              content: SizedBox(
+                width: 480,
+                child: SingleChildScrollView(
+                  child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     TextField(
                       controller: username,
                       decoration: const InputDecoration(
-                        labelText: 'Doctor login username',
+                        labelText: 'Нэвтрэх нэр (login)',
                         hintText: 'doctor.bat',
+                        helperText:
+                            'Имэйл байхгүй бол энд нэр өгнө; нэвтрэхэд ашиглана.',
                       ),
                     ),
                     const SizedBox(height: 8),
                     TextField(
                       controller: email,
                       decoration: const InputDecoration(
-                        labelText: 'Fallback email (optional)',
+                        labelText: 'Имэйл (сонголттой)',
                         hintText: 'doctor@clinova.mn',
+                        helperText:
+                            'Хоосон бол нэвтрэх нэрээр @clinova.local эмэйл үүснэ.',
                       ),
                     ),
                     const SizedBox(height: 8),
                     SwitchListTile.adaptive(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('Auto-generate temporary password'),
+                      title: const Text('Нууц үгийг автоматаар үүсгэх'),
+                      subtitle: const Text(
+                        'Идэвхгүй бол нууц өөрөө оруулна (хамгийн багадаа 12 тэмдэгт).',
+                        style: TextStyle(fontSize: 12),
+                      ),
                       value: autoGeneratePassword,
                       onChanged: (value) =>
                           setLocalState(() => autoGeneratePassword = value),
@@ -471,8 +504,10 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                         padding: const EdgeInsets.only(bottom: 8),
                         child: TextField(
                           controller: temporaryPassword,
+                          obscureText: true,
                           decoration: const InputDecoration(
-                            labelText: 'Temporary password',
+                            labelText: 'Эмчийн нууц үг (давтагдашгүй)',
+                            helperText: 'Хамгийн багадаа 12 тэмдэгт',
                           ),
                         ),
                       ),
@@ -484,6 +519,23 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                     TextField(
                       controller: lastName,
                       decoration: InputDecoration(labelText: loc.authLastName),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: phone,
+                      keyboardType: TextInputType.phone,
+                      decoration: const InputDecoration(
+                        labelText: 'Утас',
+                        hintText: '+976XXXXXXXX',
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: experienceYears,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Туршлага (жил)',
+                      ),
                     ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
@@ -557,10 +609,34 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                       decoration: InputDecoration(labelText: loc.adminLabelBio),
                     ),
                     const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () async {
+                              final x = await pickClinovaGalleryJpeg();
+                              if (x == null) return;
+                              final bytes = await x.readAsBytes();
+                              setLocalState(() {
+                                pickedAvatarBytes =
+                                    bytes.isEmpty ? null : bytes;
+                              });
+                            },
+                            icon: const Icon(Icons.photo_library_outlined),
+                            label: Text(
+                              pickedAvatarBytes != null
+                                  ? 'Зураг сонгогдсон'
+                                  : 'Зураг сонгох (галлерей)',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
                     TextField(
                       controller: avatarUrl,
                       decoration: const InputDecoration(
-                        labelText: 'Doctor avatar URL',
+                        labelText: 'Эсвэл avatar URL',
                         hintText: 'https://.../doctor.jpg',
                       ),
                     ),
@@ -574,6 +650,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                     ),
                   ],
                 ),
+                ),
               ),
               actions: [
                 TextButton(
@@ -581,55 +658,228 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                   child: Text(loc.adminCancel),
                 ),
                 FilledButton(
-                  onPressed: () async {
-                    final created = await ref
-                        .read(clinovaApiProvider)
-                        .createDoctor({
-                          'username': username.text.trim(),
-                          'email': email.text.trim(),
-                          'firstName': firstName.text.trim(),
-                          'lastName': lastName.text.trim(),
-                          'branchId': branchId,
-                          'departmentId': departmentId,
-                          'bio': bio.text.trim(),
-                          'consultationFee': int.tryParse(fee.text.trim()) ?? 0,
-                          'avatarUrl': avatarUrl.text.trim().isEmpty
-                              ? null
-                              : avatarUrl.text.trim(),
-                          'serviceIds': serviceId == null ? [] : [serviceId],
-                          'active': true,
-                          'autoGeneratePassword': autoGeneratePassword,
-                          if (!autoGeneratePassword)
-                            'temporaryPassword': temporaryPassword.text.trim(),
-                        });
-                    if (!dialogContext.mounted) return;
-                    Navigator.of(dialogContext).pop();
-                    final credentials =
-                        created['provisionedCredentials']
-                            as Map<String, dynamic>?;
-                    if (credentials != null && context.mounted) {
-                      await showDialog<void>(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          title: const Text('Doctor account credentials'),
-                          content: SelectableText(
-                            'Username: ${credentials['username'] ?? ''}\n'
-                            'Login ID: ${credentials['loginId'] ?? ''}\n'
-                            'Temporary password: ${credentials['temporaryPassword'] ?? ''}\n\n'
-                            'Share this securely with the doctor.',
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx),
-                              child: const Text('OK'),
+                  onPressed: isSubmitting
+                      ? null
+                      : () async {
+                    if (username.text.trim().isEmpty &&
+                        email.text.trim().isEmpty) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Эмчийн нэвтрэх нэр эсвэл имэйл заавал.',
                             ),
-                          ],
-                        ),
-                      );
+                          ),
+                        );
+                      }
+                      return;
                     }
-                    await _refresh();
+                    final trimmedPass = temporaryPassword.text.trim();
+                    if (!autoGeneratePassword) {
+                      if (trimmedPass.length < 12) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Нууц хамгийн багадаа 12 тэмдэгт байх ёстой.',
+                              ),
+                            ),
+                          );
+                        }
+                        return;
+                      }
+                    }
+                    setLocalState(() => isSubmitting = true);
+                    String? resolvedAvatar;
+                    final avatarBytes = pickedAvatarBytes;
+                    if (avatarBytes != null && avatarBytes.isNotEmpty) {
+                      try {
+                        final up = await ref
+                            .read(clinovaApiProvider)
+                            .uploadChatAttachment(
+                              bytes: avatarBytes,
+                              filename: 'doctor-avatar.jpg',
+                            );
+                        resolvedAvatar =
+                            up['relativeUrl']?.toString().trim();
+                        if (resolvedAvatar == null ||
+                            resolvedAvatar.isEmpty) {
+                          final u = up['url']?.toString().trim() ?? '';
+                          if (u.startsWith('/')) resolvedAvatar = u;
+                        }
+                      } on DioException {
+                        if (context.mounted) {
+                          setLocalState(() => isSubmitting = false);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Зураг upload амжилтгүй.'),
+                            ),
+                          );
+                        }
+                        return;
+                      }
+                    }
+                    if (resolvedAvatar == null &&
+                        avatarUrl.text.trim().isNotEmpty) {
+                      resolvedAvatar = avatarUrl.text.trim();
+                    }
+
+                    try {
+                      final created = await ref
+                          .read(clinovaApiProvider)
+                          .createDoctor({
+                            'username': username.text.trim(),
+                            if (email.text.trim().isNotEmpty)
+                              'email': email.text.trim(),
+                            'firstName': firstName.text.trim(),
+                            'lastName': lastName.text.trim(),
+                            if (phone.text.trim().isNotEmpty)
+                              'phoneNumber': phone.text.trim(),
+                            'experienceYears':
+                                int.tryParse(experienceYears.text.trim()) ?? 0,
+                            'branchId': branchId,
+                            'departmentId': departmentId,
+                            'bio': bio.text.trim(),
+                            'consultationFee':
+                                int.tryParse(fee.text.trim()) ?? 0,
+                            'avatarUrl': resolvedAvatar,
+                            'serviceIds': serviceId == null ? [] : [serviceId],
+                            'active': true,
+                            'autoGeneratePassword': autoGeneratePassword,
+                            if (!autoGeneratePassword)
+                              'temporaryPassword': trimmedPass,
+                          });
+                      if (!dialogContext.mounted) return;
+                      Navigator.of(dialogContext).pop();
+                      final credentials =
+                          created['provisionedCredentials']
+                              as Map<String, dynamic>?;
+                      final userMap =
+                          created['user'] as Map<String, dynamic>?;
+                      final nameParts = <String>[
+                        userMap?['firstName']?.toString().trim() ?? '',
+                        userMap?['lastName']?.toString().trim() ?? '',
+                      ].where((s) => s.isNotEmpty).toList();
+                      final doctorFullName =
+                          nameParts.isEmpty ? 'Эмч' : nameParts.join(' ');
+                      if (credentials != null && parentCtx.mounted) {
+                        final loginId =
+                            credentials['loginId']?.toString() ?? '';
+                        final tempPw =
+                            credentials['temporaryPassword']?.toString() ??
+                                '';
+                        final clipboardText = [
+                          'Нэвтрэх ID: $loginId',
+                          'Түр зуурын нууц үг: $tempPw',
+                        ].join('\n');
+                        await showDialog<void>(
+                          context: parentCtx,
+                          barrierDismissible: false,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text('Эмчийн бүртгэл үүслээ'),
+                            content: SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.stretch,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    doctorFullName,
+                                    style: Theme.of(ctx).textTheme.titleLarge
+                                        ?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Нэвтрэх мэдээлэл зөвхөн энэ удаа харагдана. Хуулж хадгална уу.',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      height: 1.35,
+                                      fontWeight: FontWeight.w600,
+                                      color: Theme.of(ctx)
+                                          .colorScheme
+                                          .tertiary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 14),
+                                  DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(ctx)
+                                          .colorScheme
+                                          .surfaceContainerHighest
+                                          .withValues(alpha: 0.65),
+                                      borderRadius:
+                                          BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: Theme.of(ctx)
+                                            .colorScheme
+                                            .outlineVariant,
+                                      ),
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(14),
+                                      child: SelectableText(
+                                        'Нэвтрэх ID: $loginId\n'
+                                        'Түр зуурын нууц үг: $tempPw',
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          height: 1.45,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            actions: [
+                              TextButton.icon(
+                                onPressed: () async {
+                                  await Clipboard.setData(
+                                    ClipboardData(text: clipboardText),
+                                  );
+                                  snack.showSnackBar(
+                                    const SnackBar(
+                                      content:
+                                          Text('Нэвтрэх мэдээлэл хуулагдлаа.'),
+                                      behavior: SnackBarBehavior.floating,
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.copy_rounded, size: 18),
+                                label:
+                                    const Text('Нэвтрэх мэдээлэл хуулах'),
+                              ),
+                              FilledButton(
+                                onPressed: () => Navigator.pop(ctx),
+                                child: const Text('Болсон'),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+                      await _refresh();
+                    } on DioException catch (e) {
+                      if (context.mounted) {
+                        setLocalState(() => isSubmitting = false);
+                        var msg = 'Эмчийн бүртгэл үүсгэхэд алдаа гарлаа.';
+                        final data = e.response?.data;
+                        if (data is Map && data['message'] != null) {
+                          msg = data['message'].toString();
+                        }
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(msg)),
+                        );
+                      }
+                    }
                   },
-                  child: Text(loc.adminCreate),
+                  child: isSubmitting
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Text(loc.adminCreate),
                 ),
               ],
             );

@@ -330,6 +330,41 @@ class AppLocalizationsMn extends AppLocalizations {
       'Хадгалахад алдаа гарлаа. Дахин оролдоно уу.';
 
   @override
+  String get profileChangePasswordTitle => 'Нууц үг солих';
+
+  @override
+  String get profileChangePasswordSubtitle =>
+      'Одоогийн нууц үгээ оруулаад, шинэ нууц (хамгийн багадаа 8 тэмдэгт) сонгоно уу.';
+
+  @override
+  String get profileChangePasswordCurrentLabel => 'Одоогийн нууц үг';
+
+  @override
+  String get profileChangePasswordNewLabel => 'Шинэ нууц үг';
+
+  @override
+  String get profileChangePasswordConfirmLabel => 'Шинэ нууц давтах';
+
+  @override
+  String get profileChangePasswordSubmit => 'Шинэчлэх';
+
+  @override
+  String get profileChangePasswordSuccessSnack =>
+      'Нууц үг шинэчлэгдлээ. Дараагийн удаа шинэ нууцаар нэвтэрнэ үү.';
+
+  @override
+  String get profileChangePasswordMismatch =>
+      'Шинэ нууц хоёр удаа ижил биш байна.';
+
+  @override
+  String get profileChangePasswordTooShort =>
+      'Шинэ нууц хамгийн багадаа 8 тэмдэгт байна.';
+
+  @override
+  String get profileChangePasswordGenericError =>
+      'Нууц шинэчлэхэд алдаа гарлаа. Дахин оролдоно уу.';
+
+  @override
   String get settingsProfileEditTitle => 'Никнейм ба профайлын зураг';
 
   @override
@@ -350,16 +385,16 @@ class AppLocalizationsMn extends AppLocalizations {
 
   @override
   String get authCreateAccountSubtitle =>
-      'Баталгаажуулах кодыг оруулснаар цаг захиалахад бэлэн болно.';
+      'Баталгаажуулсны дараа цаг захиалах, эмчтэй холбогдох, үйлчилгээг ашиглах боломжтой.';
 
   @override
   String get authFormLogInTitle => 'Нэвтрэх';
 
   @override
-  String get authEmailLabel => 'Имэйл';
+  String get authEmailLabel => 'Имэйл эсвэл нэвтрэх нэр';
 
   @override
-  String get authEmailHint => 'name@example.com';
+  String get authEmailHint => 'имэйл@жишээ.mn эсвэл doctor.enkhbayar';
 
   @override
   String get authPasswordLabel => 'Нууц үг';
@@ -387,6 +422,10 @@ class AppLocalizationsMn extends AppLocalizations {
       'Өвчтөн болон ажилтнуудад зориулсан аюулгүй нэвтрэлт.';
 
   @override
+  String get authClinovaLocalUsePasswordOnly =>
+      'Demo account байна. Нууц үгээр нэвтэрнэ үү. Энэ хаяг руу имэйл илгээгдэхгүй.';
+
+  @override
   String get welcomeTitleLine1 => 'Таны эрүүл мэнд.';
 
   @override
@@ -403,16 +442,128 @@ class AppLocalizationsMn extends AppLocalizations {
   String get welcomeLogIn => 'Нэвтрэх';
 
   @override
-  String get welcomeFeatureAi => 'AI шинж тэмдэг шалгах';
+  String get welcomeFeatureAi => 'Үйлчилгээ ба AI тусламж';
 
   @override
   String get welcomeFeatureAppointments => 'Ухаалаг цаг захиалга';
 
   @override
-  String get welcomeFeatureChat => 'Эмчтэй чатлах';
+  String get welcomeFeatureChat => 'Мэргэжилтэн, эмч нар';
 
   @override
   String get welcomeFeatureEmergency => 'Яаралтай тусламж';
+
+  @override
+  String get welcomeFeatureSecureProfile => 'Найдвартай профайл';
+
+  @override
+  String get welcomeNavHome => 'Нүүр';
+
+  @override
+  String get welcomeNavServices => 'Үйлчилгээ';
+
+  @override
+  String get welcomeNavDoctors => 'Эмч, мэргэжилтэн';
+
+  @override
+  String get welcomeNavAbout => 'Найдвар, аюулгүй байдал';
+
+  @override
+  String get welcomeBrandSubtitle => 'AI эрүүл мэндийн платформ';
+
+  @override
+  String get welcomeHeroHeadline =>
+      'Хурдан, найдвартай, ухаалаг эрүүл мэндийн үйлчилгээ.';
+
+  @override
+  String get welcomeHeroSub =>
+      'Цаг захиалах, эмчтэй холбогдох, зөвлөгөө авах, AI тусламж — бүгдийг нэг дор.';
+
+  @override
+  String get welcomeCtaExploreServices => 'Үйлчилгээ үзэх';
+
+  @override
+  String get welcomeSectionFeaturesTitle => 'Юу хийж чадах вэ';
+
+  @override
+  String get welcomeTrustAiAssist => 'AI туслахтай';
+
+  @override
+  String get welcomeTrustRealtimeBooking => 'Цаг захиалга real-time';
+
+  @override
+  String get welcomeTrustSecureRegistration => 'Найдвартай бүртгэл';
+
+  @override
+  String get welcomeTrustDoctorChat => 'Эмчтэй чатлах боломж';
+
+  @override
+  String get welcomeTrustDialogTitle => 'Clinova-д итгэх үндэс';
+
+  @override
+  String get welcomeTrustDialogBody =>
+      'Бид таны мэдээллийг хамгаалж, баталгаажсан эмч нартай холбодог. Нэвтрэлт, чат болон цаг захиалга нь орчин үеийн аюулгүй стандартад нийцдэг.';
+
+  @override
+  String get authMarketingLoginTitle => 'Таны эрүүл мэндийн дижитал түнш';
+
+  @override
+  String get authMarketingLoginLine1 =>
+      'AI тусламж, шинж тэмдгийн урьдчилан оношлолтод дэмжлэг үзүүлнэ.';
+
+  @override
+  String get authMarketingLoginLine2 =>
+      'Эмч нарын сул цаг, баталгаажсан захиалгыг шууд харна.';
+
+  @override
+  String get authMarketingLoginLine3 =>
+      'Өгөгдлийг шифрлэж, зөвхөн таны багт харагдана.';
+
+  @override
+  String get authMarketingRegisterTitle => 'Нэг бүртгэл — бүх үйлчилгээ';
+
+  @override
+  String get authMarketingRegisterLine1 =>
+      'Өвчтөний профайл, түүх болон сануулгыг нэг дор удирдана.';
+
+  @override
+  String get authMarketingRegisterLine2 =>
+      'Эмч нартай чат, зураг илгээх, дахин захиалах амархан.';
+
+  @override
+  String get authMarketingRegisterLine3 =>
+      'Имэйлээр баталгаажуулалт — найдвартай эхлэл.';
+
+  @override
+  String get authMarketingRecoveryTitle =>
+      'Нэвтрэлтээ аюулгүйгаар сэргээнэ үү';
+
+  @override
+  String get authMarketingRecoveryLine1 =>
+      'Баталгаажуулах код зөвхөн таны имэйл хаягт илгээгдэнэ.';
+
+  @override
+  String get authMarketingRecoveryLine2 =>
+      'Шинэ нууц үг тохируулснаар дахин нэвтэрч үйлчилгээ ашиглана.';
+
+  @override
+  String get authMarketingRecoveryLine3 =>
+      'Орчин үеийн аюулгүй стандарт таны бүртгэлийг хамгаална.';
+
+  @override
+  String get authMarketingVerifyTitle => 'Имэйлээ баталгаажуулна';
+
+  @override
+  String get authMarketingVerifyLine1 =>
+      'Кодыг зөвхөн таны оруулсан имэйл хаяг руу илгээнэ.';
+
+  @override
+  String get authMarketingVerifyLine2 =>
+      'Алхамыг дуусгаснаар цаг захиалга, чат гэх мэт үйлчилгээ нээгдэнэ.';
+
+  @override
+  String get authMarketingVerifyLine3 =>
+      'Нэг удаагийн код нэмэлт хамгаалалт болно.';
 
   @override
   String get authSecurityPill =>
@@ -562,7 +713,7 @@ class AppLocalizationsMn extends AppLocalizations {
 
   @override
   String get authRegisterCheckEmailSnack =>
-      'Бүртгэлээ дуусгахын тулд имэйлээр илгээсэн 6 оронтой кодыг шалгана уу.';
+      'Баталгаажуулах код таны имэйл рүү илгээгдлээ.';
 
   @override
   String get valFullName => 'Бүтэн нэрээ оруулна уу.';
@@ -810,6 +961,42 @@ class AppLocalizationsMn extends AppLocalizations {
 
   @override
   String get homeBookNow => 'Цаг авах';
+
+  @override
+  String get homeHeroSecondaryCta => 'AI зөвлөгөө авах';
+
+  @override
+  String get homePremiumHeadlineAuthed =>
+      'Сайн байна уу, таны эрүүл мэндийн самбар бэлэн боллоо.';
+
+  @override
+  String get homePremiumHeadlineGuest =>
+      'Clinova — эрүүл мэндээ нэг дороос удирдаарай.';
+
+  @override
+  String get homePremiumSubtitle =>
+      'Цаг захиалах, зөвлөгөө авах, үзлэгийн мэдээллээ нэг дороос удирдаарай.';
+
+  @override
+  String get homeNavHome => 'Нүүр';
+
+  @override
+  String get homeNavServices => 'Үйлчилгээ';
+
+  @override
+  String get homeNavDoctors => 'Эмч нар';
+
+  @override
+  String get homeNavAi => 'AI зөвлөгөө';
+
+  @override
+  String get homeNavBook => 'Цаг авах';
+
+  @override
+  String get homeNavLogin => 'Нэвтрэх';
+
+  @override
+  String get homeNavProfile => 'Профайл';
 
   @override
   String get homeAskAi => 'AI асуух';

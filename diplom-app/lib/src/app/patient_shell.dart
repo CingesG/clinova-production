@@ -11,6 +11,9 @@ class PatientShell extends ConsumerWidget {
 
   final Widget child;
 
+  static bool isDesktopLayout(BuildContext context) =>
+      MediaQuery.sizeOf(context).width >= 900;
+
   static bool _shouldShowDock(String path, String? role) {
     if (role != 'PATIENT') return false;
     if (path == '/home' ||
@@ -41,6 +44,10 @@ class PatientShell extends ConsumerWidget {
     final role = auth.user?.role;
 
     if (!auth.isAuthenticated || !_shouldShowDock(path, role)) {
+      return child;
+    }
+
+    if (isDesktopLayout(context)) {
       return child;
     }
 

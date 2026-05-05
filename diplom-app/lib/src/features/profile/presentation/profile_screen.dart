@@ -38,7 +38,7 @@ class ProfileScreen extends ConsumerWidget {
                   const SizedBox(height: 20),
                   const ClinovaLogo(
                     size: 58,
-                    variant: LogoVariant.glass,
+                    variant: LogoVariant.dark,
                   ),
                   const SizedBox(height: 28),
                   Text(
@@ -159,6 +159,18 @@ class ProfileScreen extends ConsumerWidget {
                           onPressed: () => context.push('/profile/edit'),
                           child: Text(l10n.profileEditTitle),
                         ),
+                        if (user.authProvider != 'GOOGLE') ...[
+                          const SizedBox(height: 4),
+                          TextButton.icon(
+                            onPressed: () =>
+                                context.push('/profile/change-password'),
+                            icon: const Icon(Icons.lock_outline_rounded, size: 18),
+                            label: Text(l10n.profileChangePasswordTitle),
+                            style: TextButton.styleFrom(
+                              alignment: Alignment.centerLeft,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),

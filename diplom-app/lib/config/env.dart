@@ -14,10 +14,10 @@ class Env {
     defaultValue: apiBaseUrl,
   );
 
+  /// Web/mobile release: pass `--dart-define=GOOGLE_CLIENT_ID=...` (OAuth **Web** client ID).
   static const String googleClientId = String.fromEnvironment(
     'GOOGLE_CLIENT_ID',
-    defaultValue:
-        '23034929617-oernf5ct63fl81u85bhqj3ons0ounn8f.apps.googleusercontent.com',
+    defaultValue: '',
   );
 
   // Optional web Firebase config for production web/PWA.

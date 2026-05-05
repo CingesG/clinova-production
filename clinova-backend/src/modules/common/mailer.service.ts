@@ -64,20 +64,35 @@ type ActiveProvider = 'resend' | 'smtp' | 'none';
 @Injectable()
 export class MailerService implements OnModuleInit {
   private readonly logger = new Logger(MailerService.name);
-  private readonly transporter?: nodemailer.Transporter;
+  private transporter?: nodemailer.Transporter;
+  private resend?: Resend;
   private readonly fromEmail: string;
-  private readonly resend?: Resend;
 
   constructor(private readonly config: ConfigService) {
-    const resendKey = this.config.get<string>('RESEND_API_KEY')?.trim();
-    if (resendKey) {
+    const isProduction = this.isProduction();
+
+    const resendKey =
+      this.config.get<string>('RESEND_API_KEY')?.trim() ?? '';
+    const explicitProvider = (
+      this.config.get<string>('EMAIL_PROVIDER') ?? ''
+    )
+      .trim()
+      .toLowerCase();
+
+    const allowResendInit =
+      resendKey.length > 0 &&
+      (isProduction ||
+        explicitProvider === 'resend' ||
+        explicitProvider.length === 0);
+
+    if (allowResendInit) {
       this.resend = new Resend(resendKey);
     }
 
     const host = (
       this.config.get<string>('SMTP_HOST') ??
       this.config.get<string>('EMAIL_HOST') ??
-      'smtp.gmail.com'
+      ''
     ).trim();
 
     const port = Number(
@@ -90,21 +105,29 @@ export class MailerService implements OnModuleInit {
       this.config.get<string>('SMTP_SECURE', 'false').toLowerCase() ===
       'true';
 
-    const user =
+    const user = (
       this.config.get<string>('SMTP_USER') ??
-      this.config.get<string>('EMAIL_USER');
-    const smtpPassKey = ['SMTP_', 'PASS'].join('');
-    const pass =
-      this.config.get<string>(smtpPassKey) ??
-      this.config.get<string>('EMAIL_PASS');
+      this.config.get<string>('EMAIL_USER') ??
+      ''
+    ).trim();
+
+    const pass = (
+      this.config.get<string>('SMTP_PASS') ??
+      this.config.get<string>('EMAIL_PASS') ??
+      ''
+    ).trim();
 
     this.fromEmail =
       this.config.get<string>('SMTP_FROM') ??
       this.config.get<string>('EMAIL_FROM') ??
-      user ??
-      'no-reply@clinova.local';
+      (user.length > 0 ? user : 'no-reply@clinova.local');
 
-    if (host && user && pass) {
+    const smtpComplete = host.length > 0 && user.length > 0 && pass.length > 0;
+    if (!smtpComplete && !isProduction) {
+      return;
+    }
+
+    if (smtpComplete) {
       this.transporter = nodemailer.createTransport({
         host,
         port,
@@ -114,6 +137,69 @@ export class MailerService implements OnModuleInit {
           pass,
         },
       });
+    }
+  }
+
+  private isProduction(): boolean {
+    return (
+      this.config.get<string>('NODE_ENV', 'development').toLowerCase() ===
+      'production'
+    );
+  }
+
+  private smtpCredentialsPresent(): boolean {
+    const host = (
+      this.config.get<string>('SMTP_HOST') ??
+      this.config.get<string>('EMAIL_HOST') ??
+      ''
+    ).trim();
+    const user = (
+      this.config.get<string>('SMTP_USER') ??
+      this.config.get<string>('EMAIL_USER') ??
+      ''
+    ).trim();
+    const pass = (
+      this.config.get<string>('SMTP_PASS') ??
+      this.config.get<string>('EMAIL_PASS') ??
+      ''
+    ).trim();
+    return host.length > 0 && user.length > 0 && pass.length > 0;
+  }
+
+  private validateProductionEmailConfig(): void {
+    if (!this.isProduction()) return;
+
+    const p = (
+      this.config.get<string>('EMAIL_PROVIDER') ?? ''
+    )
+      .trim()
+      .toLowerCase();
+
+    if (p === 'resend') {
+      const key = this.config.get<string>('RESEND_API_KEY')?.trim();
+      if (!key) {
+        throw new Error(
+          'Production misconfiguration: EMAIL_PROVIDER=resend requires a non-empty RESEND_API_KEY.',
+        );
+      }
+      if (!this.resend) {
+        throw new Error(
+          'Production misconfiguration: Resend client failed to initialize (check RESEND_API_KEY).',
+        );
+      }
+    }
+
+    if (p === 'smtp') {
+      if (!this.smtpCredentialsPresent()) {
+        throw new Error(
+          'Production misconfiguration: EMAIL_PROVIDER=smtp requires SMTP_HOST (or EMAIL_HOST), SMTP_USER (or EMAIL_USER), and SMTP_PASS (or EMAIL_PASS).',
+        );
+      }
+      if (!this.transporter) {
+        throw new Error(
+          'Production misconfiguration: SMTP transporter was not created; check host, user, and password env vars.',
+        );
+      }
     }
   }
 
@@ -195,15 +281,36 @@ export class MailerService implements OnModuleInit {
   async onModuleInit() {
     this.logEmailEnvPresence();
     this.logSmtpEnvPresence();
+    this.validateProductionEmailConfig();
+
+    const explicitProvider = (
+      this.config.get<string>('EMAIL_PROVIDER') ?? ''
+    )
+      .trim()
+      .toLowerCase();
+    if (
+      explicitProvider === 'smtp' &&
+      !this.transporter &&
+      !this.isProduction()
+    ) {
+      this.logger.warn(
+        'EMAIL_PROVIDER=smtp but the SMTP transporter was not created. ' +
+          'Set SMTP_HOST (or EMAIL_HOST), SMTP_USER (or EMAIL_USER), and SMTP_PASS (or EMAIL_PASS). ' +
+          'Registration OTP emails will not be delivered until SMTP is configured.',
+      );
+    }
 
     const ap = this.activeProvider();
     if (ap === 'none') {
       this.logger.warn(
-        'No usable email provider (Resend missing key / SMTP incomplete). OTP emails depend on EMAIL_DEBUG debugCode fallback.',
+        'No usable email provider (EMAIL_PROVIDER vs credentials): OTP may not be delivered. ' +
+          'Use EMAIL_PROVIDER=resend with RESEND_API_KEY or EMAIL_PROVIDER=smtp with complete SMTP_* vars.',
       );
     }
 
-    this.scheduleSmtpVerify();
+    if (this.isProduction() && this.transporter) {
+      this.scheduleSmtpVerify();
+    }
   }
 
   private escapeHtml(value: string) {
@@ -215,12 +322,6 @@ export class MailerService implements OnModuleInit {
       .replaceAll("'", '&#39;');
   }
 
-  private otpDebugEnabled(): boolean {
-    return (
-      this.config.get<string>('OTP_DEBUG', 'false').toLowerCase() === 'true'
-    );
-  }
-
   private emailDebugEnabled(): boolean {
     const isProduction =
       this.config.get<string>('NODE_ENV', 'development').toLowerCase() ===
@@ -229,6 +330,36 @@ export class MailerService implements OnModuleInit {
       this.config
         .get<string>('EMAIL_DEBUG', isProduction ? 'false' : 'true')
         .toLowerCase() === 'true'
+    );
+  }
+
+  /** Log plaintext OTP only in non-production when OTP_DEBUG=true (never log in production). */
+  private otpDebugLogEnabled(): boolean {
+    if (this.isProduction()) return false;
+    return (
+      (this.config.get<string>('OTP_DEBUG') ?? '').trim().toLowerCase() ===
+      'true'
+    );
+  }
+
+  /** Minutes shown in OTP email copy; keep aligned with auth OTP TTL (default 10). */
+  private getOtpExpireMinutesForEmail(): number {
+    const raw = this.config.get<string>('OTP_EMAIL_EXPIRE_MINUTES', '10') ?? '10';
+    const n = Number.parseInt(String(raw).trim(), 10);
+    return Number.isFinite(n) && n > 0 ? n : 10;
+  }
+
+  private buildOtpEmailPlainText(
+    code: string,
+    appNameRaw: string,
+    expiresMinutes: number,
+  ): string {
+    return (
+      `Имэйлээ баталгаажуулна уу\n\n` +
+      `Таны 6 оронтой ${appNameRaw} баталгаажуулах код: ${code}\n\n` +
+      `Энэ код ${expiresMinutes} минутын дараа хүчингүй болно.\n\n` +
+      `Хэрэв та энэ хүсэлтийг гаргаагүй бол энэхүү имэйлийг үл тоож болно.\n\n` +
+      `Энэ нь ${appNameRaw} системээс автоматаар илгээгдсэн зурвас тул reply хийх шаардлагагүй.`
     );
   }
 
@@ -329,18 +460,33 @@ export class MailerService implements OnModuleInit {
     }
   }
 
-  /** HTML + SMTP extras for OTP; skips CID when `forApi` so Resend does not send broken inline images without attachments. */
-  private buildOtpContents(
+  /**
+   * OTP / verification email: HTML + plain text + subject. CID attachments only for SMTP (`forApi` false).
+   */
+  private buildOtpEmailTemplate(
     code: string,
-    forApi: boolean,
+    options: { forApi: boolean },
   ): {
     html: string;
-    subjectSmtp: string;
+    subject: string;
+    textPlain: string;
     attachments: nodemailer.Attachment[];
   } {
+    const { forApi } = options;
     const appNameRaw = this.config.get<string>('APP_NAME', 'Clinova');
     const appName = this.escapeHtml(appNameRaw);
     const otpCode = this.escapeHtml(code);
+    const expiresMinutes = this.getOtpExpireMinutesForEmail();
+    const expiresMn = this.escapeHtml(String(expiresMinutes));
+
+    const subject = 'Clinova баталгаажуулах код';
+
+    const textPlain = this.buildOtpEmailPlainText(
+      code,
+      appNameRaw,
+      expiresMinutes,
+    );
+
     const logoUrl = (this.config.get<string>('APP_LOGO_URL') ?? '').trim();
     const logoPathRaw = (this.config.get<string>('APP_LOGO_PATH') ?? '').trim();
     const logoPath = logoPathRaw
@@ -353,55 +499,107 @@ export class MailerService implements OnModuleInit {
     const useCidLogo = !forApi && hasInlineLogo;
     const logoBlock =
       safeLogoUrl.length > 0
-        ? `<img src="${safeLogoUrl}" alt="${appName} logo" width="44" height="44" style="display:block;width:44px;height:44px;border-radius:12px;object-fit:cover;border:1px solid #dbeafe;" />`
+        ? `<img src="${safeLogoUrl}" alt="${appName} logo" width="52" height="52" style="display:block;width:52px;height:52px;border-radius:16px;object-fit:cover;border:1px solid rgba(255,255,255,0.4);" />`
         : useCidLogo
-          ? `<img src="cid:${logoCid}" alt="${appName} logo" width="44" height="44" style="display:block;width:44px;height:44px;border-radius:12px;object-fit:contain;background:#ffffff;border:1px solid #dbeafe;" />`
-          : `<div style="display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:12px;background:#eaf2ff;color:#1d4ed8;font-weight:700;font-size:14px;letter-spacing:0.4px;">CL</div>`;
+          ? `<img src="cid:${logoCid}" alt="${appName} logo" width="52" height="52" style="display:block;width:52px;height:52px;border-radius:16px;object-fit:contain;background:#ffffff;border:1px solid rgba(255,255,255,0.35);" />`
+          : `<div style="display:inline-flex;align-items:center;justify-content:center;width:52px;height:52px;border-radius:16px;background:rgba(255,255,255,0.18);color:#ffffff;font-weight:800;font-size:17px;letter-spacing:0.6px;border:1px solid rgba(255,255,255,0.4);">CL</div>`;
 
-    const subjectSmtp = `Your ${appNameRaw} verification code`;
     const html = `
-      <div style="margin:0;padding:24px 12px;background:#f3f7ff;font-family:Arial,sans-serif;">
-        <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #dbe7ff;border-radius:16px;overflow:hidden;">
-          <tr>
-            <td style="padding:24px 24px 10px;">
-              <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
-                <tr>
-                  <td style="width:52px;vertical-align:middle;">${logoBlock}</td>
-                  <td style="vertical-align:middle;padding-left:10px;">
-                    <div style="font-size:18px;line-height:1.2;font-weight:700;color:#0f172a;">${appName}</div>
-                    <div style="font-size:12px;color:#64748b;margin-top:2px;">Secure verification</div>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:0 24px 22px;">
-              <h2 style="margin:12px 0 10px;font-size:24px;line-height:1.2;color:#0f172a;">Verify your email</h2>
-              <p style="margin:0 0 14px;font-size:15px;line-height:1.5;color:#334155;">
-                Your 6-digit ${appName} verification code is:
-              </p>
-              <div style="display:inline-block;margin:0 0 14px;padding:10px 16px;border-radius:12px;background:#eff6ff;border:1px solid #bfdbfe;font-size:28px;line-height:1;font-weight:700;letter-spacing:4px;color:#1d4ed8;">
-                ${otpCode}
-              </div>
-              <p style="margin:0 0 8px;font-size:14px;line-height:1.5;color:#475569;">
-                This code expires in <strong>10 minutes</strong>.
-              </p>
-              <p style="margin:0;font-size:14px;line-height:1.5;color:#64748b;">
-                If you did not request this email, you can safely ignore it.
-              </p>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:14px 24px;background:#f8fbff;border-top:1px solid #e2e8f0;">
-              <p style="margin:0;font-size:12px;line-height:1.5;color:#94a3b8;">
-                This is an automated message from ${appName}. Please do not reply directly.
-              </p>
-            </td>
-          </tr>
-        </table>
-      </div>
-    `;
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="supported-color-schemes" content="light dark" />
+  <title>${this.escapeHtml(subject)}</title>
+  <!--[if mso]><style type="text/css">table, td { border-collapse:collapse; }</style><![endif]-->
+  <style type="text/css">
+    @media only screen and (max-width: 620px) {
+      .otp-code { font-size: 32px !important; letter-spacing: 10px !important; }
+      .pad { padding-left: 20px !important; padding-right: 20px !important; }
+    }
+    @media (prefers-color-scheme: dark) {
+      .email-outer { background-color: #0f172a !important; }
+      .email-card { background-color: #1e293b !important; border-color: #334155 !important; }
+      .email-muted { color: #94a3b8 !important; }
+      .email-body { color: #e2e8f0 !important; }
+      .otp-outer { background-color: #0f172a !important; }
+      .otp-wrap {
+        background-color: #0c4a6e !important;
+        border-color: #2dd4bf !important;
+        box-shadow: 0 0 0 1px rgba(45,212,191,0.35) !important;
+      }
+      .otp-code { color: #e0f2fe !important; }
+    }
+  </style>
+</head>
+<body style="margin:0;padding:0;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;background-color:#e8f2f7;">
+<table role="presentation" class="email-outer" cellpadding="0" cellspacing="0" width="100%" style="background:#e8f2f7;">
+  <tr>
+    <td align="center" style="padding:28px 14px;">
+      <table role="presentation" class="email-card" cellpadding="0" cellspacing="0" width="100%" style="max-width:560px;background:#ffffff;border:1px solid #b9d4e8;border-radius:20px;overflow:hidden;box-shadow:0 16px 48px rgba(15,23,42,0.1);">
+        <tr>
+          <td style="background-color:#0c4a6e;padding:24px 26px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+              <tr>
+                <td style="width:60px;vertical-align:middle;">${logoBlock}</td>
+                <td class="pad" style="vertical-align:middle;padding-left:16px;">
+                  <div style="font-family:Georgia,'Times New Roman',serif;font-size:24px;line-height:1.15;font-weight:700;color:#ffffff;letter-spacing:0.2px;">${appName}</div>
+                  <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.35;color:rgba(255,255,255,0.95);margin-top:6px;font-weight:600;">AI Healthcare Platform</div>
+                  <div style="font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:1.4;color:rgba(255,255,255,0.8);margin-top:4px;">Secure verification</div>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td class="pad" style="padding:28px 28px 10px;font-family:Arial,Helvetica,sans-serif;">
+            <h1 class="email-body" style="margin:0 0 14px;font-size:23px;line-height:1.25;font-weight:700;color:#0f172a;">Имэйлээ баталгаажуулна уу</h1>
+            <p class="email-body email-muted" style="margin:0 0 22px;font-size:15px;line-height:1.55;color:#475569;">
+              Таны 6 оронтой ${appName} баталгаажуулах код:
+            </p>
+            <table role="presentation" class="otp-outer" cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 22px;background:#f8fafc;border-radius:16px;">
+              <tr>
+                <td style="padding:8px;">
+                  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" class="otp-wrap" style="border-radius:14px;border:2px solid #0d9488;border-collapse:separate;background:#ecfeff;">
+                    <tr>
+                      <td align="center" style="padding:22px 18px;">
+                        <div class="otp-code" style="font-family:'Courier New',Courier,monospace;font-size:38px;line-height:1.15;font-weight:800;letter-spacing:12px;color:#0e7490;mso-line-height-rule:exactly;">${otpCode}</div>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+            <p class="email-body email-muted" style="margin:0 0 14px;font-size:14px;line-height:1.55;color:#475569;">
+              Энэ код ${expiresMn} минутын дараа хүчингүй болно.
+            </p>
+            <p class="email-body email-muted" style="margin:0;font-size:14px;line-height:1.55;color:#64748b;">
+              Хэрэв та энэ хүсэлтийг гаргаагүй бол энэхүү имэйлийг үл тоож болно.
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 28px 26px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-top:1px solid #e2e8f0;">
+              <tr>
+                <td style="padding-top:16px;">
+                  <p class="email-muted" style="margin:0;font-size:12px;line-height:1.6;color:#94a3b8;">
+                    Энэ нь ${appName} системээс автоматаар илгээгдсэн зурвас тул reply хийх шаардлагагүй.
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>
+    `.trim();
 
     const attachments: nodemailer.Attachment[] =
       useCidLogo ?
@@ -414,7 +612,7 @@ export class MailerService implements OnModuleInit {
         ]
       : [];
 
-    return { html, subjectSmtp, attachments };
+    return { html, subject, textPlain, attachments };
   }
 
   async sendOtpEmail(
@@ -422,17 +620,21 @@ export class MailerService implements OnModuleInit {
     code: string,
     context: { purpose: string },
   ): Promise<OtpEmailSendResult> {
-    if (this.otpDebugEnabled()) {
-      // eslint-disable-next-line no-console -- explicit Render log when OTP_DEBUG=true only
-      console.log('[OTP DEBUG]', email, code);
+    const emailDebug = this.emailDebugEnabled();
+    const normalized = email.trim().toLowerCase();
+    if (normalized.endsWith('@clinova.local')) {
+      this.logger.warn(
+        `[OTP email] purpose=${context.purpose} recipient=${email} — skipped (non-deliverable @clinova.local domain)`,
+      );
+      return { delivered: false, debugCode: emailDebug ? code : undefined };
     }
 
-    const emailDebug = this.emailDebugEnabled();
     const provider = this.activeProvider();
 
     if (provider === 'none') {
       this.logger.warn(
-        `[OTP email] purpose=${context.purpose} recipient=${email} — no provider, email NOT sent`,
+        `[OTP email] purpose=${context.purpose} recipient=${email} — no provider, email NOT sent. ` +
+          `Set EMAIL_PROVIDER=resend|smtp with credentials (RESEND_API_KEY or SMTP_*), or use EMAIL_DEBUG=true for API debugCode fallback.`,
       );
       return { delivered: false, debugCode: emailDebug ? code : undefined };
     }
@@ -441,15 +643,23 @@ export class MailerService implements OnModuleInit {
       `[OTP email] purpose=${context.purpose} recipient=${email} provider=${provider} — send starting`,
     );
 
+    if (this.otpDebugLogEnabled()) {
+      this.logger.warn(
+        `[OTP email] OTP_DEBUG=true (non-production) — verification code=${code}`,
+      );
+    }
+
     if (provider === 'resend' && this.resend) {
-      const { html } = this.buildOtpContents(code, true);
+      const { html, subject, textPlain } = this.buildOtpEmailTemplate(code, {
+        forApi: true,
+      });
       try {
         const { data, error } = await this.resend.emails.send({
           from: this.resendDefaultFrom(),
           to: [email],
-          subject: 'Clinova баталгаажуулах код',
+          subject,
           html,
-          text: `Clinova баталгаажуулах код: ${code}`,
+          text: textPlain,
         });
         if (error) {
           const statusCode =
@@ -485,9 +695,9 @@ export class MailerService implements OnModuleInit {
       }
     }
 
-    const { html, subjectSmtp, attachments } = this.buildOtpContents(
+    const { html, subject, textPlain, attachments } = this.buildOtpEmailTemplate(
       code,
-      false,
+      { forApi: false },
     );
 
     if (!this.transporter) {
@@ -501,8 +711,9 @@ export class MailerService implements OnModuleInit {
       const info = await this.transporter.sendMail({
         from: this.fromEmail,
         to: email,
-        subject: subjectSmtp,
+        subject,
         html,
+        text: textPlain,
         attachments,
       });
       const messageId =

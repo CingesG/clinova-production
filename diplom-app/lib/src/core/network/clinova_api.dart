@@ -135,6 +135,20 @@ class ClinovaApi {
     return _normalizeUserJson(map);
   }
 
+  /// PATCH `/users/me/password` — имэйл/нууц үгээр нэвтэрсэн хэрэглэгчид.
+  Future<void> changeMyPassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    await _dio.patch(
+      '/users/me/password',
+      data: {
+        'currentPassword': currentPassword,
+        'newPassword': newPassword,
+      },
+    );
+  }
+
   Map<String, dynamic> _normalizeUserJson(Map<String, dynamic> raw) {
     final a = _absolutizeUrl(raw['avatarUrl']?.toString());
     if (a != null) {

@@ -664,6 +664,16 @@ abstract class AppLocalizations {
   String get profileEditSave;
   String get profileEditSavedSnack;
   String get profileEditErrorSnack;
+  String get profileChangePasswordTitle;
+  String get profileChangePasswordSubtitle;
+  String get profileChangePasswordCurrentLabel;
+  String get profileChangePasswordNewLabel;
+  String get profileChangePasswordConfirmLabel;
+  String get profileChangePasswordSubmit;
+  String get profileChangePasswordSuccessSnack;
+  String get profileChangePasswordMismatch;
+  String get profileChangePasswordTooShort;
+  String get profileChangePasswordGenericError;
   String get settingsProfileEditTitle;
   String get settingsProfileEditSubtitle;
 
@@ -685,6 +695,7 @@ abstract class AppLocalizations {
   String get authUseEmailCode;
   String get authNewTo;
   String get authFooterSecure;
+  String get authClinovaLocalUsePasswordOnly;
 
   String get welcomeTitleLine1;
   String get welcomeTitleLine2;
@@ -695,6 +706,41 @@ abstract class AppLocalizations {
   String get welcomeFeatureAppointments;
   String get welcomeFeatureChat;
   String get welcomeFeatureEmergency;
+  String get welcomeFeatureSecureProfile;
+
+  String get welcomeNavHome;
+  String get welcomeNavServices;
+  String get welcomeNavDoctors;
+  String get welcomeNavAbout;
+  String get welcomeBrandSubtitle;
+  String get welcomeHeroHeadline;
+  String get welcomeHeroSub;
+  String get welcomeCtaExploreServices;
+  String get welcomeSectionFeaturesTitle;
+  String get welcomeTrustAiAssist;
+  String get welcomeTrustRealtimeBooking;
+  String get welcomeTrustSecureRegistration;
+  String get welcomeTrustDoctorChat;
+  String get welcomeTrustDialogTitle;
+  String get welcomeTrustDialogBody;
+
+  String get authMarketingLoginTitle;
+  String get authMarketingLoginLine1;
+  String get authMarketingLoginLine2;
+  String get authMarketingLoginLine3;
+  String get authMarketingRegisterTitle;
+  String get authMarketingRegisterLine1;
+  String get authMarketingRegisterLine2;
+  String get authMarketingRegisterLine3;
+
+  String get authMarketingRecoveryTitle;
+  String get authMarketingRecoveryLine1;
+  String get authMarketingRecoveryLine2;
+  String get authMarketingRecoveryLine3;
+  String get authMarketingVerifyTitle;
+  String get authMarketingVerifyLine1;
+  String get authMarketingVerifyLine2;
+  String get authMarketingVerifyLine3;
 
   String get authSecurityPill;
   String get authGoogleContinue;
@@ -829,6 +875,17 @@ abstract class AppLocalizations {
   String get homeMetricUpcoming;
   String get homeMetricProfile;
   String get homeBookNow;
+  String get homeHeroSecondaryCta;
+  String get homePremiumHeadlineAuthed;
+  String get homePremiumHeadlineGuest;
+  String get homePremiumSubtitle;
+  String get homeNavHome;
+  String get homeNavServices;
+  String get homeNavDoctors;
+  String get homeNavAi;
+  String get homeNavBook;
+  String get homeNavLogin;
+  String get homeNavProfile;
   String get homeAskAi;
   String homeTodayAt(String time);
   String get homeSlotBook;

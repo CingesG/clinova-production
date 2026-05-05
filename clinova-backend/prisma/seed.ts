@@ -3,8 +3,14 @@
  * - Never deletes users or resets the database.
  * - Preserves existing admin at chinges_chinges@icloud.com (creates only if missing; never changes password if present).
  * Safe to run multiple times (upsert + targeted demo appointment refresh).
+ *
+ * Demo email lists for `export-demo-credentials`: see `prisma/seed-lists.ts` (keep in sync when changing seed emails).
  */
 import 'dotenv/config';
+
+import * as fs from 'fs/promises';
+import * as path from 'path';
+import { randomBytes } from 'crypto';
 
 import {
   AppointmentStatus,
@@ -53,6 +59,10 @@ function normalizeMnPhone(raw: string): string {
 function avatarFor(userKey: string): string {
   const enc = encodeURIComponent(userKey);
   return `https://api.dicebear.com/7.x/identicon/svg?seed=${enc}`;
+}
+
+function secureRandomPassword(): string {
+  return randomBytes(18).toString('base64url');
 }
 
 type BranchSeed = {
@@ -148,7 +158,7 @@ const SERVICE_SEEDS: Array<{
     description: 'Ерөнхий эмчийн үзлэг, зөвлөгөө',
   },
   {
-    name: 'Хүүхдийн эмчийн үзлэг',
+    name: 'Хүүхдийн үзлэг',
     departmentName: 'Хүүхэд',
     price: 35_000,
     durationMinutes: 30,
@@ -169,11 +179,11 @@ const SERVICE_SEEDS: Array<{
     description: 'Гэмтэл, согогийн зөвлөгөө',
   },
   {
-    name: 'Чих хамар хоолойн үзлэг',
+    name: 'ЧХХ үзлэг',
     departmentName: 'Чих хамар хоолой',
     price: 35_000,
     durationMinutes: 30,
-    description: 'ЧХХ-ны мэргэжилтэнтэй үзлэг',
+    description: 'Чих хамар хоолойн мэргэжилтэнтэй үзлэг',
   },
   {
     name: 'Шүдний үзлэг',
@@ -245,7 +255,7 @@ const DOCTOR_SEEDS: DoctorSeed[] = [
     phone: '88071574',
     branchCode: 'CLIN_HUHD',
     departmentName: 'Хүүхэд',
-    primaryServiceName: 'Хүүхдийн эмчийн үзлэг',
+    primaryServiceName: 'Хүүхдийн үзлэг',
     bio: 'Хүүхдийн эмч — урьдчилан сэргийлэлт, халуурах, хоол тэжээлийн зөвлөгөө.',
     experienceYears: 8,
     consultationFee: 35_000,
@@ -281,7 +291,7 @@ const DOCTOR_SEEDS: DoctorSeed[] = [
     phone: '99118877',
     branchCode: 'CLIN_CHK',
     departmentName: 'Чих хамар хоолой',
-    primaryServiceName: 'Чих хамар хоолойн үзлэг',
+    primaryServiceName: 'ЧХХ үзлэг',
     bio: 'Чих хамар хоолойын мэргэжилтэн — сонсгол, ярьсангүйрлийн үзлэг.',
     experienceYears: 7,
     consultationFee: 35_000,
@@ -577,11 +587,9 @@ async function refreshDemoAppointments(
 async function main() {
   requireEnvDatabaseUrl();
 
-  const doctorPassword =
-    process.env.DEMO_DOCTOR_PASSWORD ?? 'ClinovaDoctor123!';
+  const sharedDoctorPassword = process.env.DEMO_DOCTOR_PASSWORD?.trim();
   const patientPassword =
     process.env.DEMO_PATIENT_PASSWORD ?? 'ClinovaPatient123!';
-  const doctorPasswordHash = await bcrypt.hash(doctorPassword, 10);
   const patientPasswordHash = await bcrypt.hash(patientPassword, 10);
 
   await ensureAdminAccount();
@@ -685,6 +693,14 @@ async function main() {
     email: string;
   }> = [];
 
+  const doctorCredentialRows: Array<{
+    email: string;
+    username: string;
+    loginId: string;
+    password?: string;
+    passwordNote?: string;
+  }> = [];
+
   for (const doc of DOCTOR_SEEDS) {
     const branch = branchMap.get(doc.branchCode);
     if (!branch) throw new Error(`Unknown branch: ${doc.branchCode}`);
@@ -696,11 +712,31 @@ async function main() {
     const email = doc.email.trim().toLowerCase();
     const phoneNumber = normalizeMnPhone(doc.phone);
 
+    const existingUser = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true, passwordHash: true },
+    });
+
+    let newPasswordHash: string | undefined;
+    let plainForCred: string | undefined;
+    let credNote: string | undefined;
+
+    if (sharedDoctorPassword) {
+      newPasswordHash = await bcrypt.hash(sharedDoctorPassword, 10);
+      plainForCred = sharedDoctorPassword;
+    } else if (!existingUser || !existingUser.passwordHash) {
+      plainForCred = secureRandomPassword();
+      newPasswordHash = await bcrypt.hash(plainForCred, 10);
+    } else {
+      credNote =
+        'Password not changed this run. Set DEMO_DOCTOR_PASSWORD to rotate all seeded doctor passwords, or delete the user and re-seed.';
+    }
+
     const user = await prisma.user.upsert({
       where: { email },
       create: {
         email,
-        passwordHash: doctorPasswordHash,
+        passwordHash: newPasswordHash!,
         role: Role.DOCTOR,
         status: UserStatus.ACTIVE,
         authProvider: AuthProvider.EMAIL,
@@ -720,7 +756,16 @@ async function main() {
         status: UserStatus.ACTIVE,
         emailVerified: true,
         avatarUrl: avatarFor(email),
+        ...(newPasswordHash ? { passwordHash: newPasswordHash } : {}),
       },
+    });
+
+    doctorCredentialRows.push({
+      email,
+      username: email.split('@')[0] ?? email,
+      loginId: email,
+      ...(plainForCred ? { password: plainForCred } : {}),
+      ...(credNote ? { passwordNote: credNote } : {}),
     });
 
     const profile = await prisma.doctorProfile.upsert({
@@ -798,6 +843,7 @@ async function main() {
         role: Role.PATIENT,
         status: UserStatus.ACTIVE,
         emailVerified: true,
+        passwordHash: patientPasswordHash,
       },
     });
 
@@ -853,6 +899,21 @@ async function main() {
 
   await refreshDemoAppointments(patientResults, doctorsOrdered);
 
+  const seedOutDir = path.join(__dirname, '..', 'seed-output');
+  await fs.mkdir(seedOutDir, { recursive: true });
+  await fs.writeFile(
+    path.join(seedOutDir, 'doctor-credentials.local.json'),
+    JSON.stringify(
+      {
+        generatedAt: new Date().toISOString(),
+        doctors: doctorCredentialRows,
+      },
+      null,
+      2,
+    ),
+    'utf-8',
+  );
+
   console.log('--- Clinova demo seed (idempotent) complete ---');
   console.log(`Branches: ${branchMap.size}, Departments: ${departmentMap.size}`);
   console.log(
@@ -860,8 +921,9 @@ async function main() {
   );
   console.log(`Doctors: ${doctorResults.length}, Demo patients: ${patientResults.length}`);
   console.log(`Admin: ${PRESERVE_ADMIN_EMAIL} (password unchanged if already existed)`);
-  console.log('Demo doctor password: (env DEMO_DOCTOR_PASSWORD or default ClinovaDoctor123!)');
-  console.log('Demo patient password: (env DEMO_PATIENT_PASSWORD or default ClinovaPatient123!)');
+  console.log(
+    'Doctor credentials written to seed-output/doctor-credentials.local.json',
+  );
 }
 
 main()

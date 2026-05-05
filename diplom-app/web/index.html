@@ -27,6 +27,8 @@
   <meta name="keywords" content="Clinova, clinic, Mongolia, dentist, appointment, telehealth, AI healthcare">
   <meta name="robots" content="index, follow">
   <meta name="theme-color" content="#2563EB">
+  <!-- Vercel / release билдэд tool/* скрипт __GOOGLE_SIGNIN_CLIENT_ID__-ийг $GOOGLE_CLIENT_ID-аар солиж орлуулна. -->
+  <meta name="google-signin-client_id" content="__GOOGLE_SIGNIN_CLIENT_ID__">
 
   <!-- Билдэд tool/render_seo_assets.sh — canonical, og:url автоматаар -->
   <!-- CLINOVA_SEO_INJECT_BEGIN -->
@@ -38,7 +40,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Clinova">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <meta name="application-name" content="Clinova">
+  <link rel="apple-touch-icon" sizes="192x192" href="icons/Icon-192.png">
 
   <link rel="icon" type="image/png" href="favicon.png"/>
 
@@ -53,6 +56,7 @@
     });
     window.addEventListener('appinstalled', function () {
       window.deferredInstallPrompt = null;
+      window.dispatchEvent(new Event('clinova-pwa-installed'));
     });
     window.clinovaPromptInstall = async function () {
       if (!window.deferredInstallPrompt) return false;

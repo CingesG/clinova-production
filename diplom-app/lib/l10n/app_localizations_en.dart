@@ -332,6 +332,41 @@ class AppLocalizationsEn extends AppLocalizations {
   String get profileEditErrorSnack => 'Could not save. Try again.';
 
   @override
+  String get profileChangePasswordTitle => 'Change password';
+
+  @override
+  String get profileChangePasswordSubtitle =>
+      'Use your current password, then choose a new one (min. 8 characters).';
+
+  @override
+  String get profileChangePasswordCurrentLabel => 'Current password';
+
+  @override
+  String get profileChangePasswordNewLabel => 'New password';
+
+  @override
+  String get profileChangePasswordConfirmLabel => 'Confirm new password';
+
+  @override
+  String get profileChangePasswordSubmit => 'Update password';
+
+  @override
+  String get profileChangePasswordSuccessSnack =>
+      'Password updated. Use your new password next time you sign in.';
+
+  @override
+  String get profileChangePasswordMismatch =>
+      'New passwords do not match.';
+
+  @override
+  String get profileChangePasswordTooShort =>
+      'New password must be at least 8 characters.';
+
+  @override
+  String get profileChangePasswordGenericError =>
+      'Could not update password. Try again.';
+
+  @override
   String get settingsProfileEditTitle => 'Name & photo';
 
   @override
@@ -352,16 +387,16 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get authCreateAccountSubtitle =>
-      'One quick verification code and you are ready to book visits.';
+      'After verification you can book visits, message doctors, and use every Clinova service in one place.';
 
   @override
   String get authFormLogInTitle => 'Log in';
 
   @override
-  String get authEmailLabel => 'Email';
+  String get authEmailLabel => 'Email or login ID';
 
   @override
-  String get authEmailHint => 'name@example.com';
+  String get authEmailHint => 'you@example.com or doctor.enkhbayar';
 
   @override
   String get authPasswordLabel => 'Password';
@@ -388,6 +423,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get authFooterSecure => 'Secure access for patients and staff.';
 
   @override
+  String get authClinovaLocalUsePasswordOnly =>
+      'This is a demo @clinova.local account. Sign in with your password only — email codes are not delivered to this address.';
+
+  @override
   String get welcomeTitleLine1 => 'Your Health.';
 
   @override
@@ -404,16 +443,127 @@ class AppLocalizationsEn extends AppLocalizations {
   String get welcomeLogIn => 'Log in';
 
   @override
-  String get welcomeFeatureAi => 'AI Symptom Checker';
+  String get welcomeFeatureAi => 'Services & AI assistance';
 
   @override
-  String get welcomeFeatureAppointments => 'Smart Appointments';
+  String get welcomeFeatureAppointments => 'Smart scheduling';
 
   @override
-  String get welcomeFeatureChat => 'Doctor Chat';
+  String get welcomeFeatureChat => 'Specialists & doctors';
 
   @override
   String get welcomeFeatureEmergency => 'Emergency Help';
+
+  @override
+  String get welcomeFeatureSecureProfile => 'Secure patient profile';
+
+  @override
+  String get welcomeNavHome => 'Home';
+
+  @override
+  String get welcomeNavServices => 'Services';
+
+  @override
+  String get welcomeNavDoctors => 'Doctors';
+
+  @override
+  String get welcomeNavAbout => 'Trust';
+
+  @override
+  String get welcomeBrandSubtitle => 'AI healthcare platform';
+
+  @override
+  String get welcomeHeroHeadline =>
+      'Fast, reliable, intelligent care for your health.';
+
+  @override
+  String get welcomeHeroSub =>
+      'Book visits, reach your doctors, get guidance, and tap AI support — all in one place.';
+
+  @override
+  String get welcomeCtaExploreServices => 'Browse services';
+
+  @override
+  String get welcomeSectionFeaturesTitle => 'What you can do';
+
+  @override
+  String get welcomeTrustAiAssist => 'AI-assisted guidance';
+
+  @override
+  String get welcomeTrustRealtimeBooking => 'Real-time scheduling';
+
+  @override
+  String get welcomeTrustSecureRegistration => 'Verified sign-up';
+
+  @override
+  String get welcomeTrustDoctorChat => 'Chat with clinicians';
+
+  @override
+  String get welcomeTrustDialogTitle => 'Why trust Clinova';
+
+  @override
+  String get welcomeTrustDialogBody =>
+      'We protect your information and connect you with verified clinicians. Sign-in, chat, and booking follow modern security practices.';
+
+  @override
+  String get authMarketingLoginTitle => 'Your digital health companion';
+
+  @override
+  String get authMarketingLoginLine1 =>
+      'AI guidance that supports symptom review and next steps.';
+
+  @override
+  String get authMarketingLoginLine2 =>
+      'See live availability and confirmed bookings with your care team.';
+
+  @override
+  String get authMarketingLoginLine3 =>
+      'Data is encrypted and visible only to you and authorized staff.';
+
+  @override
+  String get authMarketingRegisterTitle => 'One account for full access';
+
+  @override
+  String get authMarketingRegisterLine1 =>
+      'Manage your patient profile, history, and reminders in one hub.';
+
+  @override
+  String get authMarketingRegisterLine2 =>
+      'Message doctors, share files, and rebook without friction.';
+
+  @override
+  String get authMarketingRegisterLine3 =>
+      'Email verification keeps every account authentic.';
+
+  @override
+  String get authMarketingRecoveryTitle => 'Recover access securely';
+
+  @override
+  String get authMarketingRecoveryLine1 =>
+      'A verification code is sent only to your email inbox.';
+
+  @override
+  String get authMarketingRecoveryLine2 =>
+      'Choose a new password, then sign in to continue.';
+
+  @override
+  String get authMarketingRecoveryLine3 =>
+      'Modern safeguards help keep your account protected.';
+
+  @override
+  String get authMarketingVerifyTitle => 'Verify your email';
+
+  @override
+  String get authMarketingVerifyLine1 =>
+      'The code is delivered only to the address you provided.';
+
+  @override
+  String get authMarketingVerifyLine2 =>
+      'Finish this step to unlock booking, chat, and the rest of Clinova.';
+
+  @override
+  String get authMarketingVerifyLine3 =>
+      'One-time codes add an extra layer of account protection.';
 
   @override
   String get authSecurityPill =>
@@ -560,7 +710,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get authRegisterCheckEmailSnack =>
-      'Check your email for a 6-digit code to finish signing up.';
+      'A verification code has been sent to your email.';
 
   @override
   String get valFullName => 'Please enter your full name.';
@@ -812,7 +962,43 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeMetricProfile => 'Profile ready';
 
   @override
-  String get homeBookNow => 'Book now';
+  String get homeBookNow => 'Book visit';
+
+  @override
+  String get homeHeroSecondaryCta => 'AI consultation';
+
+  @override
+  String get homePremiumHeadlineAuthed =>
+      'Welcome — your health dashboard is ready.';
+
+  @override
+  String get homePremiumHeadlineGuest =>
+      'Premium healthcare, organised in one place.';
+
+  @override
+  String get homePremiumSubtitle =>
+      'Book visits, get advice, and manage your care from a single calm hub.';
+
+  @override
+  String get homeNavHome => 'Home';
+
+  @override
+  String get homeNavServices => 'Services';
+
+  @override
+  String get homeNavDoctors => 'Doctors';
+
+  @override
+  String get homeNavAi => 'AI advisor';
+
+  @override
+  String get homeNavBook => 'Book visit';
+
+  @override
+  String get homeNavLogin => 'Sign in';
+
+  @override
+  String get homeNavProfile => 'Profile';
 
   @override
   String get homeAskAi => 'Ask AI';

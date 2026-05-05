@@ -21,6 +21,16 @@ import { Roles } from '../common/roles.decorator';
 import { RolesGuard } from '../common/roles.guard';
 import { UsersService } from './users.service';
 
+class ChangeMyPasswordDto {
+  @IsString()
+  @MinLength(1)
+  currentPassword!: string;
+
+  @IsString()
+  @MinLength(8)
+  newPassword!: string;
+}
+
 class UpdateMyProfileDto {
   @IsOptional()
   @IsString()
@@ -104,6 +114,18 @@ export class UsersController {
   @Get('me')
   me(@CurrentUser() user: CurrentUserPayload) {
     return this.usersService.me(user.sub);
+  }
+
+  @Patch('me/password')
+  changeMyPassword(
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() dto: ChangeMyPasswordDto,
+  ) {
+    return this.usersService.changeMyPassword(
+      user.sub,
+      dto.currentPassword,
+      dto.newPassword,
+    );
   }
 
   @Patch('me')

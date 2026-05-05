@@ -1,4 +1,5 @@
 User-agent: *
 Allow: /
+Disallow:
 
-# Продакшн билдийн өмнө: export SITE_BASE_URL=https://...
+Sitemap: https://clinova-production.vercel.app/sitemap.xml

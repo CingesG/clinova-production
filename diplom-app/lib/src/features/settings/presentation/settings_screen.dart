@@ -3,19 +3,33 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/localization/context_l10n.dart';
-import '../../../core/navigation/go_router_pop.dart';
 import '../../../core/widgets/clinova_backdrop.dart';
+import '../../auth/application/auth_controller.dart';
 import '../../pwa/presentation/install_app_banner.dart';
 import 'language_controller.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
+  static String _fallbackHome(String? role) {
+    switch (role) {
+      case 'ADMIN':
+      case 'STAFF':
+        return '/admin';
+      case 'DOCTOR':
+        return '/doctor';
+      default:
+        return '/home';
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final currentLocale = ref.watch(languageControllerProvider);
+    final user = ref.watch(authControllerProvider).user;
+    final canSetPassword = user?.authProvider != 'GOOGLE';
     final langCode =
         currentLocale.languageCode == 'en' || currentLocale.languageCode == 'mn'
             ? currentLocale.languageCode
@@ -26,7 +40,14 @@ class SettingsScreen extends ConsumerWidget {
         title: Text(l10n.settings),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: () => popOrGo(context, '/home'),
+          onPressed: () {
+            final router = GoRouter.of(context);
+            if (router.canPop()) {
+              router.pop();
+              return;
+            }
+            router.go(_fallbackHome(user?.role));
+          },
         ),
       ),
       body: ClinovaBackdrop(
@@ -68,6 +89,22 @@ class SettingsScreen extends ConsumerWidget {
                 onTap: () => context.push('/profile/edit'),
               ),
             ),
+            if (canSetPassword) ...[
+              const SizedBox(height: 14),
+              _SettingsCard(
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    Icons.lock_outline_rounded,
+                    color: theme.colorScheme.primary,
+                  ),
+                  title: Text(l10n.profileChangePasswordTitle),
+                  subtitle: Text(l10n.profileChangePasswordSubtitle),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => context.push('/profile/change-password'),
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
             const PwaSettingsInstallCard(),
             Text(

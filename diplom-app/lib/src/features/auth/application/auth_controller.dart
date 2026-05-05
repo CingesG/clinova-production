@@ -1,9 +1,13 @@
 import 'package:dio/dio.dart';
+import 'package:diplom_app/l10n/app_localizations.dart';
+import 'package:diplom_app/l10n/app_localizations_en.dart';
+import 'package:diplom_app/l10n/app_localizations_mn.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/clinova_api.dart';
 import '../../../core/network/token_refresh.dart';
 import '../../../core/storage/token_storage.dart';
+import '../../settings/presentation/language_controller.dart';
 import '../domain/app_user.dart';
 
 enum AuthStage { bootstrapping, signedOut, codeSent, signedIn }
@@ -239,6 +243,63 @@ class AuthController extends StateNotifier<AuthState> {
     }
   }
 
+  AppLocalizations _lookupL10n() {
+    final loc = _ref.read(languageControllerProvider);
+    return loc.languageCode == 'en'
+        ? AppLocalizationsEn()
+        : AppLocalizationsMn();
+  }
+
+  /// Finishes sign-in after [passwordLogin] / [resendLoginOtp] returned tokens (no OTP step).
+  Future<void> _applySuccessfulPasswordLoginResponse(
+    Map<String, dynamic> response,
+  ) async {
+    final token = response['accessToken']?.toString() ?? '';
+    if (token.isEmpty) {
+      state = state.copyWith(
+        isBusy: false,
+        errorMessage: 'Login response did not include a token. Try again.',
+      );
+      return;
+    }
+    await _persistTokensFromResponse(response);
+    final user = AppUser.fromJson(
+      response['user'] is Map<String, dynamic>
+          ? response['user'] as Map<String, dynamic>
+          : <String, dynamic>{},
+    );
+    try {
+      await _verifyAccountWithBackend(user);
+    } catch (e) {
+      await _ref.read(tokenStorageProvider).clearAll();
+      state = state.copyWith(
+        stage: AuthStage.signedOut,
+        isBusy: false,
+        clearToken: true,
+        clearUser: true,
+        clearPendingPasswordForOtp: true,
+        errorMessage: e is DioException
+            ? _messageFromError(e)
+            : e.toString().replaceFirst('Exception: ', ''),
+      );
+      return;
+    }
+    final refreshed = await _ref.read(clinovaApiProvider).me();
+    final verifiedUser = AppUser.fromJson(refreshed);
+    state = state.copyWith(
+      stage: AuthStage.signedIn,
+      token: token,
+      user: verifiedUser,
+      isBusy: false,
+      clearPendingEmail: true,
+      clearPendingRegisterNames: true,
+      clearPendingPasswordForOtp: true,
+      clearOtpIntent: true,
+      clearDebugCode: true,
+      clearError: true,
+    );
+  }
+
   Future<void> passwordLogin({
     required String email,
     required String password,
@@ -250,10 +311,20 @@ class AuthController extends StateNotifier<AuthState> {
             password: password,
           );
       if (response['requiresEmailVerification'] == true) {
+        final canonicalEmail =
+            response['email']?.toString().trim().toLowerCase() ??
+                email.trim().toLowerCase();
+        if (canonicalEmail.endsWith('@clinova.local')) {
+          state = state.copyWith(
+            isBusy: false,
+            errorMessage: _lookupL10n().authClinovaLocalUsePasswordOnly,
+          );
+          return;
+        }
         final devCode = response['debugCode']?.toString();
         state = state.copyWith(
           stage: AuthStage.codeSent,
-          pendingEmail: email.trim().toLowerCase(),
+          pendingEmail: canonicalEmail,
           otpIntent: OtpIntent.emailPasswordSecondFactor,
           pendingPasswordForOtp: password,
           clearDebugCode: devCode == null,
@@ -263,50 +334,7 @@ class AuthController extends StateNotifier<AuthState> {
         );
         return;
       }
-      final token = response['accessToken']?.toString() ?? '';
-      if (token.isEmpty) {
-        state = state.copyWith(
-          isBusy: false,
-          errorMessage: 'Login response did not include a token. Try again.',
-        );
-        return;
-      }
-      await _persistTokensFromResponse(response);
-      final user = AppUser.fromJson(
-        response['user'] is Map<String, dynamic>
-            ? response['user'] as Map<String, dynamic>
-            : <String, dynamic>{},
-      );
-      try {
-        await _verifyAccountWithBackend(user);
-      } catch (e) {
-        await _ref.read(tokenStorageProvider).clearAll();
-        state = state.copyWith(
-          stage: AuthStage.signedOut,
-          isBusy: false,
-          clearToken: true,
-          clearUser: true,
-          clearPendingPasswordForOtp: true,
-          errorMessage: e is DioException
-              ? _messageFromError(e)
-              : e.toString().replaceFirst('Exception: ', ''),
-        );
-        return;
-      }
-      final refreshed = await _ref.read(clinovaApiProvider).me();
-      final verifiedUser = AppUser.fromJson(refreshed);
-      state = state.copyWith(
-        stage: AuthStage.signedIn,
-        token: token,
-        user: verifiedUser,
-        isBusy: false,
-        clearPendingEmail: true,
-        clearPendingRegisterNames: true,
-        clearPendingPasswordForOtp: true,
-        clearOtpIntent: true,
-        clearDebugCode: true,
-        clearError: true,
-      );
+      await _applySuccessfulPasswordLoginResponse(response);
     } on DioException catch (error) {
       state = state.copyWith(
         isBusy: false,
@@ -324,7 +352,8 @@ class AuthController extends StateNotifier<AuthState> {
       if (token.isEmpty) {
         state = state.copyWith(
           isBusy: false,
-          errorMessage: 'Google sign-in did not return a token.',
+          errorMessage:
+              'Google нэвтрэлт амжилтгүй боллоо. Серверээс token ирээгүй байна.',
         );
         return;
       }
@@ -344,8 +373,8 @@ class AuthController extends StateNotifier<AuthState> {
           clearToken: true,
           clearUser: true,
           errorMessage: e is DioException
-              ? _messageFromError(e)
-              : e.toString().replaceFirst('Exception: ', ''),
+              ? _googleBackendMessage(e)
+              : _googleVerifyFailureMessage(e),
         );
         return;
       }
@@ -366,7 +395,12 @@ class AuthController extends StateNotifier<AuthState> {
     } on DioException catch (error) {
       state = state.copyWith(
         isBusy: false,
-        errorMessage: _messageFromError(error),
+        errorMessage: _googleBackendMessage(error),
+      );
+    } catch (error) {
+      state = state.copyWith(
+        isBusy: false,
+        errorMessage: _unexpectedGoogleSignInError(error),
       );
     }
   }
@@ -539,13 +573,26 @@ class AuthController extends StateNotifier<AuthState> {
                 email: email,
                 password: password,
               );
-          final devCode = response['debugCode']?.toString();
-          state = state.copyWith(
-            isBusy: false,
-            clearDebugCode: devCode == null,
-            debugCode: devCode,
-            clearError: true,
-          );
+          if (response['requiresEmailVerification'] == true) {
+            final canonical = response['email']?.toString().trim().toLowerCase() ??
+                email.trim().toLowerCase();
+            if (canonical.endsWith('@clinova.local')) {
+              state = state.copyWith(
+                isBusy: false,
+                errorMessage: _lookupL10n().authClinovaLocalUsePasswordOnly,
+              );
+              return;
+            }
+            final devCode = response['debugCode']?.toString();
+            state = state.copyWith(
+              isBusy: false,
+              clearDebugCode: devCode == null,
+              debugCode: devCode,
+              clearError: true,
+            );
+            return;
+          }
+          await _applySuccessfulPasswordLoginResponse(response);
         } on DioException catch (error) {
           state = state.copyWith(
             isBusy: false,
@@ -741,10 +788,48 @@ class AuthController extends StateNotifier<AuthState> {
   }
 
   String _messageFromError(DioException error) {
+    final path = error.requestOptions.path;
+    final status = error.response?.statusCode;
+    if (status == 401 && path.contains('/auth/password-login')) {
+      return 'Имэйл эсвэл нууц үг буруу байна.';
+    }
     final data = error.response?.data;
     if (data is Map && data['message'] != null) {
       return data['message'].toString();
     }
     return error.message ?? 'Something went wrong.';
+  }
+
+  String _googleBackendMessage(DioException error) {
+    final base = _messageFromError(error);
+    if (base.contains('Google sign-in is not configured')) {
+      return 'Google нэвтрэлт сервер дээр тохируулагдаагүй байна.';
+    }
+    if (base.contains('Invalid Google token')) {
+      return 'Google баталгаажуулалт амжилтгүй. Client ID таарах эсэхийг шалгана уу.';
+    }
+    if (base.contains('Google account has no email')) {
+      return 'Google бүртгэлд имэйл байхгүй байна.';
+    }
+    return base;
+  }
+
+  String _googleVerifyFailureMessage(Object error) {
+    final s = error.toString().replaceFirst('Exception: ', '');
+    if (s.contains('Patient profile is missing')) {
+      return 'Өвчтөний профайл олдсонгүй. Дахин оролдоно уу эсвэл эмнэлэгт хандана уу.';
+    }
+    if (s.contains('Doctor profile is missing')) {
+      return 'Эмчийн профайл олдсонгүй. Админтай холбогдоно уу.';
+    }
+    return _unexpectedGoogleSignInError(error);
+  }
+
+  String _unexpectedGoogleSignInError(Object error) {
+    final raw = error.toString();
+    if (raw.contains('Null check operator used on a null value')) {
+      return 'Google нэвтрэлт тохиргоо дутуу байна. Дахин deploy хийж шалгана уу.';
+    }
+    return 'Google нэвтрэлт амжилтгүй боллоо.';
   }
 }

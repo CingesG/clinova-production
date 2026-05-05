@@ -1,7 +1,9 @@
 import 'package:diplom_app/l10n/app_localizations.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/pwa/clinova_web_install_bar.dart';
 import '../core/network/realtime_connection_scope.dart';
 import '../core/theme/clinova_theme.dart';
 import '../features/settings/presentation/language_controller.dart';
@@ -17,8 +19,18 @@ class ClinovaApp extends ConsumerWidget {
 
     return MaterialApp.router(
       builder: (context, child) {
-        return RealtimeConnectionScope(
-          child: child ?? const SizedBox.shrink(),
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            RealtimeConnectionScope(
+              child: child ?? const SizedBox.shrink(),
+            ),
+            if (kIsWeb)
+              const Align(
+                alignment: Alignment.bottomCenter,
+                child: ClinovaWebInstallBar(),
+              ),
+          ],
         );
       },
       onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,

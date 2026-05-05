@@ -10,16 +10,13 @@ class AuthFormCard extends StatelessWidget {
     final primary = Theme.of(context).colorScheme.primary;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(22),
+      padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 28),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.94),
         borderRadius: BorderRadius.circular(28),
         border: Border.all(
-          color: Color.lerp(
-                Colors.white.withValues(alpha: 0.85),
-                primary,
-                0.12,
-              ) ??
+          color:
+              Color.lerp(Colors.white.withValues(alpha: 0.85), primary, 0.12) ??
               Colors.white.withValues(alpha: 0.85),
         ),
         boxShadow: const [

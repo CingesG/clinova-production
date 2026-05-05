@@ -19,7 +19,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 
 import { CurrentUser, CurrentUserPayload } from '../common/current-user.decorator';
 import { AuthGuard } from '../common/auth.guard';
@@ -29,11 +29,18 @@ import { DoctorService } from './doctor.service';
 
 class DoctorDto {
   @IsOptional()
+  @Transform(({ value }) =>
+    typeof value === 'string' && value.trim() === '' ? undefined : value,
+  )
   @IsString()
   username?: string;
 
+  @IsOptional()
+  @Transform(({ value }) =>
+    typeof value === 'string' && value.trim() === '' ? undefined : value,
+  )
   @IsString()
-  email!: string;
+  email?: string;
 
   @IsString()
   firstName!: string;

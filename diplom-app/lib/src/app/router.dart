@@ -21,6 +21,7 @@ import '../features/doctor/presentation/doctor_notes_screen.dart';
 import '../features/doctor/presentation/doctor_schedule_screen.dart';
 import '../features/branches/presentation/branches_screen.dart';
 import '../features/home/presentation/home_screen.dart';
+import '../features/profile/presentation/profile_change_password_screen.dart';
 import '../features/profile/presentation/profile_edit_screen.dart';
 import '../features/profile/presentation/profile_screen.dart';
 import '../features/settings/presentation/settings_screen.dart';
@@ -233,6 +234,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/profile',
             routes: [
+              GoRoute(
+                path: 'change-password',
+                builder: (context, state) => const ProfileChangePasswordScreen(),
+              ),
               GoRoute(
                 path: 'edit',
                 builder: (context, state) => const ProfileEditScreen(),

@@ -16,7 +16,9 @@
     "prisma:seed": "ts-node prisma/seed.ts",
     "seed:demo": "ts-node prisma/seed.ts",
     "prisma:delete-user": "ts-node prisma/delete-user-by-email.ts",
-    "cleanup:users": "node scripts/cleanup-users.js"
+    "cleanup:users": "node scripts/cleanup-users.js",
+    "cleanup:demo-doctors": "ts-node scripts/cleanup-demo-doctors.ts",
+    "credentials:demo": "tsx prisma/scripts/export-demo-credentials.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.8",
@@ -51,6 +53,7 @@
     "@types/node": "^22.18.12",
     "prisma": "^6.17.1",
     "ts-node": "^10.9.2",
+    "tsx": "^4.19.3",
     "typescript": "^5.9.3"
   }
 }

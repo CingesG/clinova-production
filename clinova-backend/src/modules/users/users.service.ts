@@ -55,6 +55,35 @@ export class UsersService {
     return this.findById(userId);
   }
 
+  async changeMyPassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, passwordHash: true },
+    });
+    if (!user) {
+      throw new NotFoundException('User not found.');
+    }
+    if (!user.passwordHash) {
+      throw new BadRequestException(
+        'Нууц үг тохируулаагүй бүртгэл (жишээ нь Google-ээр нэвтэрсэн). Нууц сэргээх хэрэглэнэ үү.',
+      );
+    }
+    const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!valid) {
+      throw new BadRequestException('Одоогийн нууц үг буруу байна.');
+    }
+    const hash = await bcrypt.hash(newPassword, 10);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash: hash },
+    });
+    return { message: 'Нууц үг шинэчлэгдлээ.' };
+  }
+
   async updateMe(userId: string, input: UpdateProfileInput) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },

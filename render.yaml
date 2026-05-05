@@ -3,11 +3,12 @@ services:
     name: clinova-backend
     runtime: node
     rootDir: clinova-backend
-    buildCommand: npm install --include=dev && npx prisma generate && npx prisma db push && npm run build
+    buildCommand: npm ci && npx prisma generate && npx prisma migrate deploy && npm run build
     startCommand: npm run start:prod
     envVars:
       - key: NODE_ENV
         value: production
 
 # DATABASE_URL болон үлдсэн нууцыг Render Dashboard-д оруулна (.env commit битгий).
-# Миграци ашиглах бол migrate deploy-д сольно (production-д prisma db push-ийг зөв зохистой ажиллуулаарай).
+# Build нь migrate deploy ашиглана. Шинэ DB дээр: migrate дараа `npm run prisma:seed` нэмж ажиллуулна (хэрэгцээтэй бол).
+# Локал demo reset-д л `prisma db push` тохиромжтой.

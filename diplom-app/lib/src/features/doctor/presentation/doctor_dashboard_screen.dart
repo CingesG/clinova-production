@@ -54,7 +54,11 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
+        const SnackBar(
+          content: Text(
+            'Үзлэгийн төлөв шинэчлэхэд алдаа гарлаа. Сүлжээ эсвэл эрхээ шалгаад дахин оролдоно уу.',
+          ),
+        ),
       );
     } finally {
       if (mounted) {

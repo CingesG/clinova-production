@@ -11,6 +11,7 @@ import '../../../core/widgets/clinova_backdrop.dart';
 import '../../../core/widgets/clinova_circle_avatar.dart';
 import '../../../core/widgets/clinova_logo.dart';
 import '../../auth/application/auth_controller.dart';
+import 'patient_desktop_nav_bar.dart';
 
 String? _findDepartmentIdByKeywords(
   List<Map<String, dynamic>> departments,
@@ -62,43 +63,69 @@ void _goAppointments(BuildContext context, Map<String, String?> queryMap) {
   );
 }
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  final GlobalKey _doctorsSectionKey = GlobalKey();
+
+  void _scrollToDoctors() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _doctorsSectionKey.currentContext;
+      if (!mounted || ctx == null) return;
+      Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOutCubic,
+        alignment: 0.15,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final authState = ref.watch(authControllerProvider);
     final user = authState.user;
     final isAuthed = authState.isAuthenticated;
-    final guestOrName = user?.displayName ?? l10n.homeGuestName;
+    final screenW = MediaQuery.sizeOf(context).width;
+    final isDesktop = PatientDesktopContainer.isDesktopWidth(screenW);
+    final showDockSpace = isAuthed && user?.role == 'PATIENT' && !isDesktop;
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
     return Scaffold(
-      endDrawer: const _HomeDrawer(),
-      appBar: AppBar(
-        backgroundColor: theme.colorScheme.surface.withValues(alpha: 0.78),
-        surfaceTintColor: Colors.transparent,
-        centerTitle: false,
-        leadingWidth: 132,
-        leading: const Padding(
-          padding: EdgeInsets.only(left: 8),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: ClinovaLogo(size: 40, variant: LogoVariant.dark),
-          ),
-        ),
-        actions: [
-          Builder(
-            builder: (ctx) => IconButton(
-              tooltip: l10n.homeMenuTitle,
-              icon: const Icon(Icons.menu_rounded),
-              onPressed: () => Scaffold.of(ctx).openEndDrawer(),
+      endDrawer: isDesktop ? null : const _HomeDrawer(),
+      appBar: isDesktop
+          ? null
+          : AppBar(
+              backgroundColor: theme.colorScheme.surface.withValues(
+                alpha: 0.78,
+              ),
+              surfaceTintColor: Colors.transparent,
+              centerTitle: false,
+              leadingWidth: 148,
+              leading: const Padding(
+                padding: EdgeInsets.only(left: 10),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: ClinovaLogo(size: 46, variant: LogoVariant.dark),
+                ),
+              ),
+              actions: [
+                Builder(
+                  builder: (ctx) => IconButton(
+                    tooltip: l10n.homeMenuTitle,
+                    icon: const Icon(Icons.menu_rounded),
+                    onPressed: () => Scaffold.of(ctx).openEndDrawer(),
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
-      ),
       body: ClinovaBackdrop(
         child: SafeArea(
           child: Stack(
@@ -160,155 +187,206 @@ class HomeScreen extends ConsumerWidget {
                     return CustomScrollView(
                       primary: true,
                       slivers: [
+                        if (isDesktop)
+                          SliverToBoxAdapter(
+                            child: PatientDesktopContainer(
+                              child: Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  24,
+                                  20,
+                                  24,
+                                  0,
+                                ),
+                                child: PatientDesktopNavBar(
+                                  isAuthenticated: isAuthed,
+                                  onScrollToDoctors: _scrollToDoctors,
+                                ),
+                              ),
+                            ),
+                          ),
                         SliverPadding(
                           padding: EdgeInsets.fromLTRB(
-                            20,
-                            12,
-                            20,
-                            isAuthed && user?.role == 'PATIENT' ? 156 : 128,
+                            isDesktop ? 32 : 20,
+                            isDesktop ? 16 : 12,
+                            isDesktop ? 32 : 20,
+                            showDockSpace ? 156 : (isDesktop ? 88 : 128),
                           ),
                           sliver: SliverList.list(
                             children: [
-                              Text(
-                                l10n.homeTagline,
-                                style: theme.textTheme.headlineSmall,
-                              ),
-                              const SizedBox(height: 22),
-                              TweenAnimationBuilder<double>(
-                                duration: const Duration(milliseconds: 650),
-                                tween: Tween(begin: 0, end: 1),
-                                builder: (context, value, child) {
-                                  return Opacity(
-                                    opacity: value,
-                                    child: Transform.translate(
-                                      offset: Offset(0, (1 - value) * 18),
-                                      child: child,
+                              PatientDesktopContainer(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    Text(
+                                      l10n.homeTagline,
+                                      style:
+                                          (isDesktop
+                                                  ? theme
+                                                        .textTheme
+                                                        .headlineMedium
+                                                  : theme.textTheme.titleLarge)
+                                              ?.copyWith(
+                                                fontWeight: FontWeight.w800,
+                                                letterSpacing: -0.5,
+                                                color: const Color(0xFF102A43),
+                                              ),
                                     ),
-                                  );
-                                },
-                                child: _HeroPanel(
-                                  userName: guestOrName,
-                                  upcomingCount: upcomingAppointments.length
-                                      .toString(),
-                                  profileCompletion: '$profileCompletion%',
-                                  onBook: () =>
-                                      context.push('/appointments/book'),
+                                    SizedBox(height: isDesktop ? 28 : 20),
+                                    _HeroPanel(
+                                      isWide: isDesktop,
+                                      isAuthed: isAuthed,
+                                      upcomingCount: upcomingAppointments.length
+                                          .toString(),
+                                      profileCompletion: '$profileCompletion%',
+                                      onBook: () =>
+                                          context.push('/appointments/book'),
+                                      onAi: () => context.push('/agent'),
+                                    ),
+                                    const SizedBox(height: 18),
+                                    Wrap(
+                                      spacing: 10,
+                                      runSpacing: 10,
+                                      children: [
+                                        _FilterPill(
+                                          label: l10n.homeFilterEnt,
+                                          icon: Icons.hearing_rounded,
+                                          onTap: () => _goAppointments(
+                                            context,
+                                            entDeptId != null
+                                                ? {'departmentId': entDeptId}
+                                                : {},
+                                          ),
+                                        ),
+                                        _FilterPill(
+                                          label: l10n.homeFilterPediatrics,
+                                          icon: Icons.child_friendly_rounded,
+                                          onTap: () => _goAppointments(
+                                            context,
+                                            pedDeptId != null
+                                                ? {'departmentId': pedDeptId}
+                                                : {},
+                                          ),
+                                        ),
+                                        _FilterPill(
+                                          label: l10n.homeFilterDermatology,
+                                          icon: Icons.spa_rounded,
+                                          onTap: () => _goAppointments(
+                                            context,
+                                            dermDeptId != null
+                                                ? {'departmentId': dermDeptId}
+                                                : {},
+                                          ),
+                                        ),
+                                        _FilterPill(
+                                          label: l10n.homeFilterWomensCare,
+                                          icon: Icons.favorite_rounded,
+                                          onTap: () => _goAppointments(
+                                            context,
+                                            gynDeptId != null
+                                                ? {'departmentId': gynDeptId}
+                                                : {},
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 22),
+                                    if (isAuthed && user?.role == 'PATIENT')
+                                      _PatientHealthSection(
+                                        l10n: l10n,
+                                        theme: theme,
+                                        dashboard: dashboard,
+                                      ),
+                                    if (isAuthed && user?.role == 'PATIENT')
+                                      const SizedBox(height: 20),
+                                    _StaffPreviewSection(
+                                      key: _doctorsSectionKey,
+                                      l10n: l10n,
+                                      theme: theme,
+                                      doctors: doctorsList,
+                                    ),
+                                    const SizedBox(height: 20),
+                                    _BranchesPreviewSection(
+                                      l10n: l10n,
+                                      theme: theme,
+                                      branches: branchesList,
+                                    ),
+                                    const SizedBox(height: 26),
+                                    _SectionHeader(
+                                      title: l10n.homeTodayTitle,
+                                      subtitle: l10n.homeTodaySubtitle,
+                                    ),
+                                    const SizedBox(height: 14),
+                                    if (snapshot.connectionState ==
+                                        ConnectionState.waiting)
+                                      const Center(
+                                        child: CircularProgressIndicator(),
+                                      )
+                                    else if (slots.isEmpty)
+                                      Container(
+                                        padding: const EdgeInsets.all(18),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withValues(
+                                            alpha: 0.92,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            22,
+                                          ),
+                                          border: Border.all(
+                                            color: const Color(0xFFE2E8F0),
+                                          ),
+                                          boxShadow: const [
+                                            BoxShadow(
+                                              color: Color(0x080F172A),
+                                              blurRadius: 14,
+                                              offset: Offset(0, 6),
+                                            ),
+                                          ],
+                                        ),
+                                        child: Text(l10n.homeNoSlotsToday),
+                                      )
+                                    else
+                                      ...slots.take(3).map((slot) {
+                                        final start = DateTime.tryParse(
+                                          slot['startsAt']?.toString() ?? '',
+                                        );
+                                        return Padding(
+                                          padding: const EdgeInsets.only(
+                                            bottom: 12,
+                                          ),
+                                          child: _AvailabilityCard(
+                                            doctor:
+                                                slot['doctorName']
+                                                    ?.toString() ??
+                                                l10n.homeFallbackDoctor,
+                                            specialty:
+                                                slot['departmentName']
+                                                    ?.toString() ??
+                                                l10n.homeFallbackDepartment,
+                                            branch:
+                                                slot['branchName']
+                                                    ?.toString() ??
+                                                l10n.homeFallbackBranch,
+                                            slot: start != null
+                                                ? DateFormat(
+                                                    'HH:mm',
+                                                  ).format(start)
+                                                : '--:--',
+                                            accent: const Color(0xFF0F766E),
+                                            branchId: slot['branchId']
+                                                ?.toString(),
+                                            departmentId: slot['departmentId']
+                                                ?.toString(),
+                                            serviceId: slot['serviceId']
+                                                ?.toString(),
+                                            doctorId: slot['doctorId']
+                                                ?.toString(),
+                                          ),
+                                        );
+                                      }),
+                                  ],
                                 ),
                               ),
-                              const SizedBox(height: 18),
-                              Wrap(
-                                spacing: 10,
-                                runSpacing: 10,
-                                children: [
-                                  _FilterPill(
-                                    label: l10n.homeFilterEnt,
-                                    icon: Icons.hearing_rounded,
-                                    onTap: () => _goAppointments(
-                                      context,
-                                      entDeptId != null
-                                          ? {'departmentId': entDeptId}
-                                          : {},
-                                    ),
-                                  ),
-                                  _FilterPill(
-                                    label: l10n.homeFilterPediatrics,
-                                    icon: Icons.child_friendly_rounded,
-                                    onTap: () => _goAppointments(
-                                      context,
-                                      pedDeptId != null
-                                          ? {'departmentId': pedDeptId}
-                                          : {},
-                                    ),
-                                  ),
-                                  _FilterPill(
-                                    label: l10n.homeFilterDermatology,
-                                    icon: Icons.spa_rounded,
-                                    onTap: () => _goAppointments(
-                                      context,
-                                      dermDeptId != null
-                                          ? {'departmentId': dermDeptId}
-                                          : {},
-                                    ),
-                                  ),
-                                  _FilterPill(
-                                    label: l10n.homeFilterWomensCare,
-                                    icon: Icons.favorite_rounded,
-                                    onTap: () => _goAppointments(
-                                      context,
-                                      gynDeptId != null
-                                          ? {'departmentId': gynDeptId}
-                                          : {},
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 22),
-                              if (isAuthed && user?.role == 'PATIENT')
-                                _PatientHealthSection(
-                                  l10n: l10n,
-                                  theme: theme,
-                                  dashboard: dashboard,
-                                ),
-                              if (isAuthed && user?.role == 'PATIENT')
-                                const SizedBox(height: 20),
-                              _StaffPreviewSection(
-                                l10n: l10n,
-                                theme: theme,
-                                doctors: doctorsList,
-                              ),
-                              const SizedBox(height: 20),
-                              _BranchesPreviewSection(
-                                l10n: l10n,
-                                theme: theme,
-                                branches: branchesList,
-                              ),
-                              const SizedBox(height: 26),
-                              _SectionHeader(
-                                title: l10n.homeTodayTitle,
-                                subtitle: l10n.homeTodaySubtitle,
-                              ),
-                              const SizedBox(height: 14),
-                              if (snapshot.connectionState ==
-                                  ConnectionState.waiting)
-                                const Center(child: CircularProgressIndicator())
-                              else if (slots.isEmpty)
-                                Container(
-                                  padding: const EdgeInsets.all(18),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.92),
-                                    borderRadius: BorderRadius.circular(28),
-                                  ),
-                                  child: Text(l10n.homeNoSlotsToday),
-                                )
-                              else
-                                ...slots.take(3).map((slot) {
-                                  final start = DateTime.tryParse(
-                                    slot['startsAt']?.toString() ?? '',
-                                  );
-                                  return Padding(
-                                    padding: const EdgeInsets.only(bottom: 12),
-                                    child: _AvailabilityCard(
-                                      doctor:
-                                          slot['doctorName']?.toString() ??
-                                          l10n.homeFallbackDoctor,
-                                      specialty:
-                                          slot['departmentName']?.toString() ??
-                                          l10n.homeFallbackDepartment,
-                                      branch:
-                                          slot['branchName']?.toString() ??
-                                          l10n.homeFallbackBranch,
-                                      slot: start != null
-                                          ? DateFormat('HH:mm').format(start)
-                                          : '--:--',
-                                      accent: const Color(0xFF0F766E),
-                                      branchId: slot['branchId']?.toString(),
-                                      departmentId: slot['departmentId']
-                                          ?.toString(),
-                                      serviceId: slot['serviceId']?.toString(),
-                                      doctorId: slot['doctorId']?.toString(),
-                                    ),
-                                  );
-                                }),
                             ],
                           ),
                         ),
@@ -317,11 +395,12 @@ class HomeScreen extends ConsumerWidget {
                   },
                 ),
               ),
-              Positioned(
-                right: 20,
-                bottom: isAuthed && user?.role == 'PATIENT' ? 36 : 24,
-                child: const _HomeAiAgentFab(),
-              ),
+              if (!isDesktop)
+                Positioned(
+                  right: 20,
+                  bottom: showDockSpace ? 36 : 24,
+                  child: const _HomeAiAgentFab(),
+                ),
             ],
           ),
         ),
@@ -438,13 +517,13 @@ class _PatientHealthSection extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.85)),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x100F172A),
-            blurRadius: 20,
-            offset: Offset(0, 12),
+            color: Color(0x080F172A),
+            blurRadius: 16,
+            offset: Offset(0, 8),
           ),
         ],
       ),
@@ -567,6 +646,7 @@ class _PatientHealthSection extends StatelessWidget {
 
 class _StaffPreviewSection extends StatelessWidget {
   const _StaffPreviewSection({
+    super.key,
     required this.l10n,
     required this.theme,
     required this.doctors,
@@ -652,7 +732,10 @@ class _StaffPreviewSection extends StatelessWidget {
                 left: 12,
                 bottom: 12,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xCC071B4D),
                     borderRadius: BorderRadius.circular(999),
@@ -999,71 +1082,214 @@ class _HomeDrawer extends StatelessWidget {
 
 class _HeroPanel extends StatelessWidget {
   const _HeroPanel({
-    required this.userName,
+    required this.isWide,
+    required this.isAuthed,
     required this.upcomingCount,
     required this.profileCompletion,
     required this.onBook,
+    required this.onAi,
   });
 
-  final String userName;
+  final bool isWide;
+  final bool isAuthed;
   final String upcomingCount;
   final String profileCompletion;
   final VoidCallback onBook;
+  final VoidCallback onAi;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF0F766E), Color(0xFF155E75), Color(0xFF102A43)],
+    final headline = isAuthed
+        ? l10n.homePremiumHeadlineAuthed
+        : l10n.homePremiumHeadlineGuest;
+    final subtitle = l10n.homePremiumSubtitle;
+
+    final gradientBox = BoxDecoration(
+      gradient: const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF0E7490), Color(0xFF155E75), Color(0xFF0F172A)],
+        stops: [0.0, 0.45, 1.0],
+      ),
+      borderRadius: BorderRadius.circular(24),
+      border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x140F172A),
+          blurRadius: 20,
+          offset: Offset(0, 10),
         ),
-        borderRadius: BorderRadius.circular(32),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x220F172A),
-            blurRadius: 28,
-            offset: Offset(0, 18),
+      ],
+    );
+
+    final headlineStyle = isWide
+        ? theme.textTheme.headlineMedium?.copyWith(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+            height: 1.15,
+            fontSize: 30,
+            letterSpacing: -0.6,
+          )
+        : theme.textTheme.titleLarge?.copyWith(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+            height: 1.2,
+            fontSize: 22,
+          );
+
+    final badge = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
+      ),
+      child: Text(
+        l10n.homeBadgePremiumCare,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+          fontSize: 12,
+          letterSpacing: 0.2,
+        ),
+      ),
+    );
+
+    final subtitleWidget = Text(
+      subtitle,
+      style: theme.textTheme.bodyLarge?.copyWith(
+        color: Colors.white.withValues(alpha: 0.82),
+        height: 1.45,
+        fontWeight: FontWeight.w500,
+      ),
+    );
+
+    final ctas = Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        FilledButton.icon(
+          onPressed: onBook,
+          style: FilledButton.styleFrom(
+            backgroundColor: Colors.white,
+            foregroundColor: const Color(0xFF155E75),
+            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
           ),
-        ],
+          icon: const Icon(Icons.calendar_month_rounded, size: 20),
+          label: Text(l10n.homeBookNow),
+        ),
+        OutlinedButton.icon(
+          onPressed: onAi,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.white,
+            side: BorderSide(color: Colors.white.withValues(alpha: 0.55)),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+          icon: const Icon(Icons.auto_awesome_rounded, size: 19),
+          label: Text(l10n.homeHeroSecondaryCta),
+        ),
+      ],
+    );
+
+    final summaryCard = Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(999),
+          Text(
+            l10n.homeMetricUpcoming,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.75),
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
             ),
-            child: Text(
-              l10n.homeBadgePremiumCare,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            upcomingCount,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 28,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 18),
+          Text(
+            l10n.homeMetricProfile,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.75),
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            profileCompletion,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (isWide) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 22),
+        decoration: gradientBox,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 58,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  badge,
+                  const SizedBox(height: 16),
+                  Text(headline, style: headlineStyle),
+                  const SizedBox(height: 12),
+                  subtitleWidget,
+                  const SizedBox(height: 22),
+                  ctas,
+                ],
               ),
             ),
-          ),
-          const SizedBox(height: 18),
-          Text(
-            l10n.homeHeroGreeting(userName),
-            style: theme.textTheme.headlineSmall?.copyWith(
-              color: Colors.white,
-              height: 1.18,
-            ),
-          ),
+            const SizedBox(width: 24),
+            Expanded(flex: 42, child: summaryCard),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: gradientBox,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          badge,
+          const SizedBox(height: 14),
+          Text(headline, style: headlineStyle),
           const SizedBox(height: 10),
-          Text(
-            l10n.homeHeroSubtitle,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: Colors.white.withValues(alpha: 0.76),
-            ),
-          ),
-          const SizedBox(height: 18),
+          subtitleWidget,
+          const SizedBox(height: 16),
           Row(
             children: [
               Expanded(
@@ -1082,26 +1308,7 @@ class _HeroPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 18),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: FilledButton.icon(
-              onPressed: onBook,
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: const Color(0xFF0F766E),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 18,
-                  vertical: 12,
-                ),
-                minimumSize: const Size(0, 44),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-              icon: const Icon(Icons.calendar_month_rounded, size: 18),
-              label: Text(l10n.homeBookNow),
-            ),
-          ),
+          ctas,
         ],
       ),
     );
@@ -1180,19 +1387,17 @@ class _FilterPill extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     return Material(
       color: Colors.white.withValues(alpha: 0.88),
+      elevation: 0,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
+        side: const BorderSide(color: Color(0xFFE2E8F0)),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.white),
-          ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1244,12 +1449,13 @@ class _AvailabilityCard extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x100F172A),
-            blurRadius: 14,
-            offset: Offset(0, 10),
+            color: Color(0x080F172A),
+            blurRadius: 16,
+            offset: Offset(0, 8),
           ),
         ],
       ),
@@ -1260,7 +1466,7 @@ class _AvailabilityCard extends StatelessWidget {
             height: 52,
             decoration: BoxDecoration(
               color: accent.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(20),
             ),
             child: Icon(Icons.local_hospital_rounded, color: accent),
           ),

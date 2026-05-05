@@ -20,7 +20,7 @@ class ClinovaBackdrop extends StatelessWidget {
           const Positioned(
             top: -96,
             left: -56,
-            child: _GlowOrb(size: 240, color: Color(0xFF2DD4BF)),
+            child: _GlowOrb(size: 240, color: Color(0xFFCBD5E1)),
           ),
           const Positioned(
             top: 180,
@@ -30,7 +30,7 @@ class ClinovaBackdrop extends StatelessWidget {
           const Positioned(
             bottom: -120,
             left: -32,
-            child: _GlowOrb(size: 260, color: Color(0xFFF97316)),
+            child: _GlowOrb(size: 260, color: Color(0xFF2DD4BF)),
           ),
           Positioned.fill(child: child),
         ],

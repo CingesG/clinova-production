@@ -5,8 +5,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
+import { randomBytes } from 'crypto';
 import {
   AppointmentStatus,
+  AuthProvider,
   NotificationType,
   Prisma,
   Role,
@@ -22,7 +24,7 @@ import { USER_DETAIL_ADMIN_SAFE_SELECT } from '../common/user-public-select';
 
 type DoctorInput = {
   username?: string;
-  email: string;
+  email?: string;
   firstName: string;
   lastName: string;
   phone?: string;
@@ -84,13 +86,8 @@ export class DoctorService {
   }
 
   private generateTemporaryPassword() {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#';
-    const length = 14;
-    let output = '';
-    for (let i = 0; i < length; i++) {
-      output += chars[Math.floor(Math.random() * chars.length)];
-    }
-    return output;
+    // Cryptographically strong — each new doctor gets a unique one-time password.
+    return randomBytes(12).toString('base64url');
   }
 
   async listDoctors(filters: {
@@ -340,6 +337,14 @@ export class DoctorService {
         'Temporary password is required when autoGeneratePassword is false.',
       );
     }
+    if (
+      (input.temporaryPassword?.trim().length ?? 0) > 0 &&
+      temporaryPassword.length < 12
+    ) {
+      throw new BadRequestException(
+        'Temporary password must be at least 12 characters.',
+      );
+    }
     const passwordHash = await bcrypt.hash(temporaryPassword, 10);
     const phoneNormalized = this.coerceOptionalDoctorPhone(
       input.phoneNumber ?? input.phone,
@@ -365,6 +370,8 @@ export class DoctorService {
           data: {
             role: Role.DOCTOR,
             status: UserStatus.ACTIVE,
+            authProvider: AuthProvider.EMAIL,
+            emailVerified: true,
             firstName: input.firstName,
             lastName: input.lastName,
             ...(phoneNormalized !== undefined
@@ -381,6 +388,8 @@ export class DoctorService {
             passwordHash,
             role: Role.DOCTOR,
             status: UserStatus.ACTIVE,
+            authProvider: AuthProvider.EMAIL,
+            emailVerified: true,
             firstName: input.firstName,
             lastName: input.lastName,
             ...(phoneNormalized !== undefined
