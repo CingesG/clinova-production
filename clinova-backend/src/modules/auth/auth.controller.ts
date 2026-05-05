@@ -105,6 +105,13 @@ class TestEmailDto {
   email!: string;
 }
 
+class MaintenanceDeleteTestUserDto {
+  @IsEmail()
+  email!: string;
+}
+
+const MAINTENANCE_SECRET_HEADER = 'x-clinova-maintenance-secret';
+
 @Controller('auth')
 @Throttle({ default: { limit: 30, ttl: 60000 } })
 export class AuthController {
@@ -170,6 +177,26 @@ export class AuthController {
       dto.otp,
       dto.newPassword,
     );
+  }
+
+  /**
+   * TEMPORARY: delete one allowlisted test user (MAINTENANCE_SECRET + header).
+   * Remove before final production deploy.
+   */
+  @Post('maintenance/delete-test-user')
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
+  maintenanceDeleteTestUser(
+    @Headers(MAINTENANCE_SECRET_HEADER) secret: string | undefined,
+    @Body() dto: MaintenanceDeleteTestUserDto,
+  ) {
+    const expected = this.config.get<string>('MAINTENANCE_SECRET')?.trim();
+    if (!expected) {
+      throw new ForbiddenException('Maintenance endpoint disabled.');
+    }
+    if (!secret || secret !== expected) {
+      throw new ForbiddenException('Invalid maintenance credentials.');
+    }
+    return this.authService.maintenanceDeleteSingleTestUser(dto.email);
   }
 
   /** SMTP шалгалт (зөвхөн EMAIL_TEST_SECRET + header-д таарах үед идэвхтэй). */

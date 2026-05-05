@@ -47,6 +47,10 @@ const USER_INCLUDE = {
 const OTP_EMAIL_FAILED_MN =
   'Баталгаажуулах код илгээхэд алдаа гарлаа. Имэйл тохиргоог шалгана уу.';
 
+/** Temporary maintenance delete — must match body email; do not broaden. */
+const MAINTENANCE_DELETE_ALLOWED_EMAIL = 'gantumurchinges261@gmail.com';
+const MAINTENANCE_DELETE_PROTECTED_EMAIL = 'chinges_chinges@icloud.com';
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -1161,5 +1165,93 @@ export class AuthService {
     await this.audit(userId, 'LOGOUT', {});
 
     return { success: true };
+  }
+
+  /**
+   * Temporary: delete exactly one seeded/test user by allowlisted email (see MAINTENANCE_DELETE_ALLOWED_EMAIL).
+   * Caller must verify MAINTENANCE_SECRET + header. Remove this method when the HTTP endpoint is removed.
+   */
+  async maintenanceDeleteSingleTestUser(rawEmail: string) {
+    const normalized = this.normalizeEmail(rawEmail);
+
+    if (normalized === MAINTENANCE_DELETE_PROTECTED_EMAIL) {
+      throw new ForbiddenException('This email cannot be deleted via maintenance.');
+    }
+
+    if (normalized !== MAINTENANCE_DELETE_ALLOWED_EMAIL) {
+      throw new ForbiddenException('Maintenance delete is not allowed for this email.');
+    }
+
+    const user = await this.prisma.user.findFirst({
+      where: { email: { equals: normalized, mode: 'insensitive' } },
+      include: {
+        patientProfile: { select: { id: true } },
+        doctorProfile: { select: { id: true } },
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found for that email.');
+    }
+
+    if (user.doctorProfile?.id) {
+      const appointmentCount = await this.prisma.appointment.count({
+        where: { doctorId: user.doctorProfile.id },
+      });
+      if (appointmentCount > 0) {
+        throw new ConflictException(
+          'Refusing: user is a doctor with appointments; delete manually after reassigning.',
+        );
+      }
+    }
+
+    const deletedEmail =
+      user.email.trim().toLowerCase();
+    const deletedUserId = user.id;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.otpCode.deleteMany({
+        where: {
+          OR: [
+            { userId: user.id },
+            { email: { equals: deletedEmail, mode: 'insensitive' } },
+          ],
+        },
+      });
+
+      if (user.patientProfile?.id) {
+        await tx.appointment.deleteMany({
+          where: { patientId: user.patientProfile.id },
+        });
+      }
+
+      await tx.jobApplication.deleteMany({
+        where: { email: { equals: deletedEmail, mode: 'insensitive' } },
+      });
+
+      await tx.message.deleteMany({
+        where: {
+          OR: [{ senderId: user.id }, { receiverId: user.id }],
+        },
+      });
+
+      await tx.appointmentSlotLock.deleteMany({
+        where: { lockedByUserId: user.id },
+      });
+
+      await tx.refreshToken.deleteMany({ where: { userId: user.id } });
+
+      await tx.user.delete({ where: { id: user.id } });
+    });
+
+    this.logger.log(
+      `Maintenance delete-test-user completed for email=${deletedEmail}`,
+    );
+
+    return {
+      ok: true,
+      deletedEmail,
+      deletedUserId,
+    };
   }
 }

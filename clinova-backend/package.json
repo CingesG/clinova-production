@@ -2,6 +2,9 @@
   "name": "clinova-backend",
   "version": "1.0.0",
   "private": true,
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
+  },
   "scripts": {
     "start:dev": "nest start --watch",
     "build": "nest build",
@@ -10,7 +13,10 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:push": "prisma db push",
-    "prisma:seed": "ts-node prisma/seed.ts"
+    "prisma:seed": "ts-node prisma/seed.ts",
+    "seed:demo": "ts-node prisma/seed.ts",
+    "prisma:delete-user": "ts-node prisma/delete-user-by-email.ts",
+    "cleanup:users": "node scripts/cleanup-users.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.8",

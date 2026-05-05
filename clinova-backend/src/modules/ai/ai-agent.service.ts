@@ -49,51 +49,55 @@ export interface ClinovaAgentResponse {
   safetyDisclaimer: string;
 }
 
-/** Symptom keywords (MN + EN) → department name substring used in DB seed. */
+/** Symptom keywords (MN + EN) → substring matched against Department.name (MN seed names). */
 const DEPT_RULES: Array<{ re: RegExp; deptIncludes: string }> = [
   {
     re: /чих|хоолой|сонсгол|ear|ears|throat|\bent\b|chi[h]?|hooloi|sons(g|h)ol/i,
-    deptIncludes: 'ENT',
+    deptIncludes: 'чих хамар',
   },
   {
     re: /шүд|шүдний|tooth|teeth|dental|dentistry|cavity|shud|shudnii/i,
-    deptIncludes: 'Dentistry',
+    deptIncludes: 'шүд',
   },
   {
     re: /хүүхэд|child|kid|baby|pediatr|huuhed|huuhdiin/i,
-    deptIncludes: 'Pediatrics',
+    deptIncludes: 'хүүхэд',
   },
   {
     re: /арьс|skin|rash|itch|дермат|dermat|arisan|tuuralt|zagathna/i,
-    deptIncludes: 'Dermatology',
+    deptIncludes: 'арьс',
   },
   {
-    re: /зүрх|heart|chest pain|cardio|angina|blood pressure|zurh|daralt/i,
-    deptIncludes: 'Cardiology',
+    re: /зүрх|heart|chest pain|cardio|angina|blood pressure|zurh|даралт|daralt/i,
+    deptIncludes: 'зүрх',
   },
   {
-    re: /жирэмсэн|pregn|gynec|women|obstetr|jiremsen|emegtei/i,
-    deptIncludes: 'Gynecology',
+    re: /жирэмсэн|pregn|gynec|women|obstetr|jiremsen|эмэгтэй/i,
+    deptIncludes: 'эмэгтэй',
   },
   {
-    re: /толгой|headache|migrain|neuro|нүд|tolgoi|tolgoi(o|u)?vd|nud/i,
-    deptIncludes: 'Neurology',
+    re: /толгой|headache|migrain|neuro|tolgoi|tolgoi(o|u)?vd/i,
+    deptIncludes: 'мэдрэл',
+  },
+  {
+    re: /нуүд|хараа|харагдах|харагдахгүй|vision|cataract|nudnii|нүдний|харах/i,
+    deptIncludes: 'нүд',
   },
   {
     re: /халуун|fever|cold|flu|cough|internal|stomach|бээрэх|хэвлий|abdomen|haluur|hani|hevlii|gedes/i,
-    deptIncludes: 'Internal Medicine',
+    deptIncludes: 'дотор',
   },
   {
     re: /гэмтэл|fracture|trauma|injury|broken|хугцаа|gemtel|hugarsan/i,
-    deptIncludes: 'Trauma',
+    deptIncludes: 'гэмтэл',
   },
   {
-    re: /мэс засал|surgery|surgical|операц|mes zasal|hagalgaa/i,
-    deptIncludes: 'Surgery',
+    re: /мэс засал|surgery|surgical|операц|mes zasal|hagалгаа/i,
+    deptIncludes: 'дотор',
   },
   {
     re: /сэтгэл|түргэн|тэвдэх|anxiety|panic|depress|setgel|tugsh|sandrah/i,
-    deptIncludes: 'Internal Medicine',
+    deptIncludes: 'дотор',
   },
 ];
 
@@ -856,8 +860,10 @@ If unsure use type GENERAL and short safe answer.`,
       }
     }
 
-    const internal = departments.find((d) =>
-      d.name.toLowerCase().includes('internal'),
+    const internal = departments.find(
+      (d) =>
+        d.name.toLowerCase().includes('дотор') ||
+        d.name.toLowerCase().includes('internal'),
     );
     if (internal) return internal;
 

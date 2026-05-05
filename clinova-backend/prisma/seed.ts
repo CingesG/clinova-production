@@ -1,533 +1,867 @@
+/**
+ * Idempotent Clinova demo seed (branches, departments, services, doctors, schedules, demo patients, sample appointments).
+ * - Never deletes users or resets the database.
+ * - Preserves existing admin at chinges_chinges@icloud.com (creates only if missing; never changes password if present).
+ * Safe to run multiple times (upsert + targeted demo appointment refresh).
+ */
 import 'dotenv/config';
 
 import {
   AppointmentStatus,
-  JobApplicationStatus,
+  AuthProvider,
+  BranchStatus,
+  DepartmentStatus,
   PrismaClient,
   Role,
+  ServiceStatus,
   UserStatus,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
-async function main() {
-  await prisma.notification.deleteMany();
-  await prisma.payment.deleteMany();
-  await prisma.medicalRecord.deleteMany();
-  await prisma.appointment.deleteMany();
-  await prisma.doctorBreak.deleteMany();
-  await prisma.doctorTimeOff.deleteMany();
-  await prisma.doctorWeeklySchedule.deleteMany();
-  await prisma.doctorService.deleteMany();
-  await prisma.message.deleteMany();
-  await prisma.jobApplication.deleteMany();
-  await prisma.otpCode.deleteMany();
-  await prisma.doctorProfile.deleteMany();
-  await prisma.patientProfile.deleteMany();
-  await prisma.service.deleteMany();
-  await prisma.department.deleteMany();
-  await prisma.branch.deleteMany();
-  await prisma.user.deleteMany();
+const PRESERVE_ADMIN_EMAIL = 'chinges_chinges@icloud.com';
 
-  const branchSeeds = [
-    {
-      name: 'Clinova Central',
-      code: 'CENTRAL',
-      address: 'Sukhbaatar District, 1st Khoroo, Peace Ave 15',
-      city: 'Ulaanbaatar',
-      contactPhone: '+97670110000',
-      contactEmail: 'central@clinova.mn',
-      openingHours: 'Mon–Sat 08:00–20:00',
-      latitude: 47.9184,
-      longitude: 106.9177,
-    },
-    {
-      name: 'Clinova Riverfront',
-      code: 'RIVER',
-      address: 'Khan-Uul District, River Garden Complex B',
-      city: 'Ulaanbaatar',
-      contactPhone: '+97670110001',
-      contactEmail: 'river@clinova.mn',
-      openingHours: 'Mon–Sun 09:00–21:00',
-      latitude: 47.8942,
-      longitude: 106.9159,
-    },
-    {
-      name: 'Clinova Bayanzurkh',
-      code: 'BAYANZURKH',
-      address: 'Bayanzurkh District, 18-r khoroo, Ikh Nayramdal St 42',
-      city: 'Ulaanbaatar',
-      contactPhone: '+97670110002',
-      contactEmail: 'bayanzurkh@clinova.mn',
-      openingHours: 'Mon–Sat 08:00–19:30',
-      latitude: 47.9231,
-      longitude: 106.9378,
-    },
-    {
-      name: 'Clinova Songinokhairkhan',
-      code: 'SONGINO',
-      address: 'Songinokhairkhan District, 32-r khoroo, Health Center 7',
-      city: 'Ulaanbaatar',
-      contactPhone: '+97670110003',
-      contactEmail: 'songino@clinova.mn',
-      openingHours: 'Mon–Sat 09:00–20:00',
-      latitude: 47.8865,
-      longitude: 106.7052,
-    },
-    {
-      name: 'Clinova Darkhan',
-      code: 'DARKHAN',
-      address: 'Darkhan-Uul, 1-r microdistrict, Medical row 3',
-      city: 'Darkhan',
-      contactPhone: '+97670110004',
-      contactEmail: 'darkhan@clinova.mn',
-      openingHours: 'Mon–Fri 08:30–18:00',
-      latitude: 49.4867,
-      longitude: 105.9228,
-    },
-  ];
+const DEMO_APPOINTMENT_REASONS = [
+  'Clinova demo #1 — Дотор дагнах үзлэг',
+  'Clinova demo #2 — Хүүхдийн урьдчилан сэргийлэх үзлэг',
+  'Clinova demo #3 — Эмэгтэйчүүдийн хяналт',
+  'Clinova demo #4 — ЧХХ шалтгаантай үзлэг',
+  'Clinova demo #5 — Маргаашийн ерөнхий цаг',
+] as const;
 
-  const branches: Awaited<ReturnType<typeof prisma.branch.create>>[] = [];
-  for (const b of branchSeeds) {
-    branches.push(await prisma.branch.create({ data: b }));
+function requireEnvDatabaseUrl() {
+  if (!process.env.DATABASE_URL?.trim()) {
+    throw new Error('DATABASE_URL is required for prisma seed.');
   }
+}
 
-  const branchByCode = new Map(branches.map((b) => [b.code, b]));
-
-  const departmentNames = [
-    'Pediatrics',
-    'Gynecology',
-    'Trauma',
-    'ENT',
-    'Dentistry',
-    'Internal Medicine',
-    'Surgery',
-    'Cardiology',
-    'Dermatology',
-    'Neurology',
-  ];
-
-  const departments = new Map<string, { id: string; name: string }>();
-  for (const name of departmentNames) {
-    const department = await prisma.department.create({
-      data: {
-        name,
-        description: `${name} services at Clinova`,
-      },
-    });
-    departments.set(name, department);
+function normalizeMnPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  if (digits.startsWith('976') && digits.length >= 11) {
+    return `+${digits}`;
   }
+  if (digits.length === 8) {
+    return `+976${digits}`;
+  }
+  if (digits.length > 0) {
+    return digits.startsWith('976') ? `+${digits}` : `+976${digits}`;
+  }
+  return raw.trim();
+}
 
-  /** One service type per branch (slug used in map key: `${slug}_${branchCode}`) */
-  const serviceTypeDefs = [
-    {
-      slug: 'ent',
-      name: 'ENT Consultation',
-      departmentName: 'ENT' as const,
-      price: 60_000,
-      durationMinutes: 30,
-    },
-    {
-      slug: 'ped',
-      name: 'Pediatric Checkup',
-      departmentName: 'Pediatrics' as const,
-      price: 70_000,
-      durationMinutes: 30,
-    },
-    {
-      slug: 'derm',
-      name: 'Dermatology Consultation',
-      departmentName: 'Dermatology' as const,
-      price: 80_000,
-      durationMinutes: 30,
-    },
-    {
-      slug: 'card',
-      name: 'Cardiology Follow-up',
-      departmentName: 'Cardiology' as const,
-      price: 95_000,
-      durationMinutes: 45,
-    },
-    {
-      slug: 'gyn',
-      name: 'Gynecology Consultation',
-      departmentName: 'Gynecology' as const,
-      price: 75_000,
-      durationMinutes: 40,
-    },
-    {
-      slug: 'neuro',
-      name: 'Neurology Consultation',
-      departmentName: 'Neurology' as const,
-      price: 88_000,
-      durationMinutes: 40,
-    },
-    {
-      slug: 'dent',
-      name: 'Dental Consultation',
-      departmentName: 'Dentistry' as const,
-      price: 55_000,
-      durationMinutes: 30,
-    },
-  ];
+function avatarFor(userKey: string): string {
+  const enc = encodeURIComponent(userKey);
+  return `https://api.dicebear.com/7.x/identicon/svg?seed=${enc}`;
+}
 
-  const services = new Map<string, { id: string; branchId: string; departmentId: string }>();
+type BranchSeed = {
+  code: string;
+  name: string;
+  address: string;
+  contactPhone: string;
+  contactEmail: string;
+  openingHours: string;
+  latitude: number;
+  longitude: number;
+};
 
-  for (const branch of branches) {
-    for (const st of serviceTypeDefs) {
-      const key = `${st.slug}_${branch.code}`;
-      const service = await prisma.service.create({
-        data: {
-          name: `${st.name} · ${branch.name}`,
-          description: `${st.name} at ${branch.name}`,
-          branchId: branch.id,
-          departmentId: departments.get(st.departmentName)!.id,
-          price: st.price,
-          durationMinutes: st.durationMinutes,
-        },
+const BRANCH_SEEDS: BranchSeed[] = [
+  {
+    code: 'CLIN_TUV',
+    name: 'Clinova Төв салбар',
+    address: 'Улаанбаатар, Сүхбаатар дүүрэг, 1-р хороо',
+    contactPhone: '+97677001122',
+    contactEmail: 'tuv@clinova.demo',
+    openingHours: 'Даваа–Баасан 08:00–20:00, Бямба 09:00–14:00',
+    latitude: 47.9184,
+    longitude: 106.9177,
+  },
+  {
+    code: 'CLIN_HUHD',
+    name: 'Clinova Хүүхдийн салбар',
+    address: 'Улаанбаатар, Баянзүрх дүүрэг',
+    contactPhone: '+97677002233',
+    contactEmail: 'huuhdiin@clinova.demo',
+    openingHours: 'Даваа–Бямба 09:00–19:00',
+    latitude: 47.9231,
+    longitude: 106.9378,
+  },
+  {
+    code: 'CLIN_EMEG',
+    name: 'Clinova Эмэгтэйчүүдийн салбар',
+    address: 'Улаанбаатар, Хан-Уул дүүрэг',
+    contactPhone: '+97677003344',
+    contactEmail: 'emegtei@clinova.demo',
+    openingHours: 'Даваа–Баасан 08:30–18:30',
+    latitude: 47.8942,
+    longitude: 106.9159,
+  },
+  {
+    code: 'CLIN_GEM',
+    name: 'Clinova Гэмтэл, сэргээн засах салбар',
+    address: 'Улаанбаатар, Баянгол дүүрэг',
+    contactPhone: '+97677004455',
+    contactEmail: 'gemtel@clinova.demo',
+    openingHours: 'Даваа–Бямба 08:00–18:00',
+    latitude: 47.905,
+    longitude: 106.9,
+  },
+  {
+    code: 'CLIN_CHK',
+    name: 'Clinova Чих хамар хоолойн салбар',
+    address: 'Улаанбаатар, Сонгинохайрхан дүүрэг',
+    contactPhone: '+97677005566',
+    contactEmail: 'chkh@clinova.demo',
+    openingHours: 'Даваа–Бямба 09:00–18:00',
+    latitude: 47.8865,
+    longitude: 106.7052,
+  },
+];
+
+const DEPARTMENT_SEEDS: Array<{ name: string; description: string }> = [
+  { name: 'Дотор', description: 'Дотоодын өвчин, ерөнхий оношилгоо' },
+  { name: 'Хүүхэд', description: 'Хүүхдийн эмчилгээ, урьдчилан сэргийлэлт' },
+  { name: 'Эмэгтэйчүүд', description: 'Эмэгтэйчүүдийн эрүүл мэнд, жирэмсэн хяналт' },
+  { name: 'Гэмтэл согог', description: 'Гэмтэл, сэргээн засал, сураг алдалт' },
+  { name: 'Чих хамар хоолой', description: 'ЧХХ өвчин, сонсголын шинжилгээ' },
+  { name: 'Шүд', description: 'Шүдний эмчилгээ, ариутгал' },
+  { name: 'Зүрх судас', description: 'Зүрх судасны оношилгоо, ЭКГ' },
+  { name: 'Мэдрэл', description: 'Нейрологи, толгой өвдөлт' },
+  { name: 'Арьс харшил', description: 'Арьсны өвчин, харшил' },
+  { name: 'Нүд', description: 'Нүдний үзлэг, харааны шинжилгээ' },
+];
+
+/** Service title per branch; department links by name. */
+const SERVICE_SEEDS: Array<{
+  name: string;
+  departmentName: string;
+  price: number;
+  durationMinutes: number;
+  description: string;
+}> = [
+  {
+    name: 'Ерөнхий үзлэг',
+    departmentName: 'Дотор',
+    price: 30_000,
+    durationMinutes: 30,
+    description: 'Ерөнхий эмчийн үзлэг, зөвлөгөө',
+  },
+  {
+    name: 'Хүүхдийн эмчийн үзлэг',
+    departmentName: 'Хүүхэд',
+    price: 35_000,
+    durationMinutes: 30,
+    description: 'Хүүхдийн эрүүл мэндийн үзлэг',
+  },
+  {
+    name: 'Эмэгтэйчүүдийн үзлэг',
+    departmentName: 'Эмэгтэйчүүд',
+    price: 45_000,
+    durationMinutes: 40,
+    description: 'Эмэгтэйчүүдийн үзлэг, хяналт',
+  },
+  {
+    name: 'Гэмтлийн зөвлөгөө',
+    departmentName: 'Гэмтэл согог',
+    price: 40_000,
+    durationMinutes: 30,
+    description: 'Гэмтэл, согогийн зөвлөгөө',
+  },
+  {
+    name: 'Чих хамар хоолойн үзлэг',
+    departmentName: 'Чих хамар хоолой',
+    price: 35_000,
+    durationMinutes: 30,
+    description: 'ЧХХ-ны мэргэжилтэнтэй үзлэг',
+  },
+  {
+    name: 'Шүдний үзлэг',
+    departmentName: 'Шүд',
+    price: 25_000,
+    durationMinutes: 30,
+    description: 'Шүдний ерөнхий үзлэг',
+  },
+  {
+    name: 'Зүрхний ЭКГ зөвлөгөө',
+    departmentName: 'Зүрх судас',
+    price: 50_000,
+    durationMinutes: 45,
+    description: 'Зүрх судасны оношилгоо, ЭКГ',
+  },
+  {
+    name: 'Мэдрэлийн зөвлөгөө',
+    departmentName: 'Мэдрэл',
+    price: 45_000,
+    durationMinutes: 40,
+    description: 'Мэдрэлийн эмчийн зөвлөгөө',
+  },
+  {
+    name: 'Арьс харшлын үзлэг',
+    departmentName: 'Арьс харшил',
+    price: 35_000,
+    durationMinutes: 30,
+    description: 'Арьс харшлын оношилгоо',
+  },
+  {
+    name: 'Нүдний үзлэг',
+    departmentName: 'Нүд',
+    price: 40_000,
+    durationMinutes: 30,
+    description: 'Нүдний эмчийн үзлэг',
+  },
+];
+
+type DoctorSeed = {
+  email: string;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  branchCode: string;
+  departmentName: string;
+  primaryServiceName: string;
+  bio: string;
+  experienceYears: number;
+  consultationFee: number;
+};
+
+const DOCTOR_SEEDS: DoctorSeed[] = [
+  {
+    email: 'doctor.enkhbayar@clinova.local',
+    firstName: 'Энхбаяр',
+    lastName: 'Бат',
+    phone: '99112233',
+    branchCode: 'CLIN_TUV',
+    departmentName: 'Дотор',
+    primaryServiceName: 'Ерөнхий үзлэг',
+    bio: 'Дотрын тасгийн мэргэшсэн эмч. Хоол боловсруулах эрхтэн, ерөнхий дотоодын оношилгоонд төвлөрнө.',
+    experienceYears: 12,
+    consultationFee: 30_000,
+  },
+  {
+    email: 'doctor.solongo@clinova.local',
+    firstName: 'Солонго',
+    lastName: 'Наран',
+    phone: '88071574',
+    branchCode: 'CLIN_HUHD',
+    departmentName: 'Хүүхэд',
+    primaryServiceName: 'Хүүхдийн эмчийн үзлэг',
+    bio: 'Хүүхдийн эмч — урьдчилан сэргийлэлт, халуурах, хоол тэжээлийн зөвлөгөө.',
+    experienceYears: 8,
+    consultationFee: 35_000,
+  },
+  {
+    email: 'doctor.ariunzaya@clinova.local',
+    firstName: 'Ариунзаяа',
+    lastName: 'Дөлгөөн',
+    phone: '99001122',
+    branchCode: 'CLIN_EMEG',
+    departmentName: 'Эмэгтэйчүүд',
+    primaryServiceName: 'Эмэгтэйчүүдийн үзлэг',
+    bio: 'Эмэгтэйчүүдийн эрүүл мэнд, жирэмсэн хяналт, эрт илрүүлэлт.',
+    experienceYears: 10,
+    consultationFee: 45_000,
+  },
+  {
+    email: 'doctor.temuulen@clinova.local',
+    firstName: 'Тэмүүлэн',
+    lastName: 'Ган',
+    phone: '88112233',
+    branchCode: 'CLIN_GEM',
+    departmentName: 'Гэмтэл согог',
+    primaryServiceName: 'Гэмтлийн зөвлөгөө',
+    bio: 'Гэмтэл, сэргээн заслын чиглэлээр зөвлөгөө өгнө.',
+    experienceYears: 9,
+    consultationFee: 40_000,
+  },
+  {
+    email: 'doctor.munkherdene@clinova.local',
+    firstName: 'Мөнх-Эрдэнэ',
+    lastName: 'Сүх',
+    phone: '99118877',
+    branchCode: 'CLIN_CHK',
+    departmentName: 'Чих хамар хоолой',
+    primaryServiceName: 'Чих хамар хоолойн үзлэг',
+    bio: 'Чих хамар хоолойын мэргэжилтэн — сонсгол, ярьсангүйрлийн үзлэг.',
+    experienceYears: 7,
+    consultationFee: 35_000,
+  },
+  {
+    email: 'doctor.oyunchimeg@clinova.local',
+    firstName: 'Оюунчимэг',
+    lastName: 'Цэцэг',
+    phone: '88990011',
+    branchCode: 'CLIN_TUV',
+    departmentName: 'Шүд',
+    primaryServiceName: 'Шүдний үзлэг',
+    bio: 'Шүдний эмч — ариутгал, ерөнхий оношилгоо, анхны эмчилгээний төлөвлөгөө.',
+    experienceYears: 11,
+    consultationFee: 25_000,
+  },
+  {
+    email: 'doctor.batorgil@clinova.local',
+    firstName: 'Бат-Оргил',
+    lastName: 'Энх',
+    phone: '99007766',
+    branchCode: 'CLIN_TUV',
+    departmentName: 'Зүрх судас',
+    primaryServiceName: 'Зүрхний ЭКГ зөвлөгөө',
+    bio: 'Зүрх судасны эмч — даралт, зүрхний иог дагаж хяналт.',
+    experienceYears: 14,
+    consultationFee: 50_000,
+  },
+  {
+    email: 'doctor.nomin@clinova.local',
+    firstName: 'Номин',
+    lastName: 'Дарь',
+    phone: '88665544',
+    branchCode: 'CLIN_HUHD',
+    departmentName: 'Мэдрэл',
+    primaryServiceName: 'Мэдрэлийн зөвлөгөө',
+    bio: 'Мэдрэлийн эмч — толгой өвдөлт, нойр, стрессийн зөвлөгөө.',
+    experienceYears: 6,
+    consultationFee: 45_000,
+  },
+  {
+    email: 'doctor.enkhjin@clinova.local',
+    firstName: 'Энхжин',
+    lastName: 'Саруул',
+    phone: '99114455',
+    branchCode: 'CLIN_EMEG',
+    departmentName: 'Арьс харшил',
+    primaryServiceName: 'Арьс харшлын үзлэг',
+    bio: 'Арьс харшлын эмч — тууралт, харшил, арьсны үзлэг.',
+    experienceYears: 5,
+    consultationFee: 35_000,
+  },
+  {
+    email: 'doctor.huslen@clinova.local',
+    firstName: 'Хүслэн',
+    lastName: 'Түвшин',
+    phone: '88009988',
+    branchCode: 'CLIN_CHK',
+    departmentName: 'Нүд',
+    primaryServiceName: 'Нүдний үзлэг',
+    bio: 'Нүдний эмч — ойр, холын харааны үзлэг, зөвлөгөө.',
+    experienceYears: 9,
+    consultationFee: 40_000,
+  },
+];
+
+type PatientSeed = {
+  email: string;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  address: string;
+};
+
+const PATIENT_SEEDS: PatientSeed[] = [
+  {
+    email: 'demo.patient1@clinova.local',
+    firstName: 'Анужин',
+    lastName: 'Бат-Эрдэнэ',
+    phone: '86081466',
+    address: 'Улаанбаатар, Хан-Уул, 15-р хороо',
+  },
+  {
+    email: 'demo.patient2@clinova.local',
+    firstName: 'Мөнх',
+    lastName: 'Наранцэцэг',
+    phone: '88119900',
+    address: 'Улаанбаатар, Баянзүрх, 26-р хороо',
+  },
+  {
+    email: 'demo.patient3@clinova.local',
+    firstName: 'Энх',
+    lastName: 'Төгөлдөр',
+    phone: '99008877',
+    address: 'Улаанбаатар, Сүхбаатар, 8-р хороо',
+  },
+];
+
+async function ensureAdminAccount() {
+  const existing = await prisma.user.findUnique({
+    where: { email: PRESERVE_ADMIN_EMAIL },
+  });
+  if (existing) {
+    if (existing.role !== Role.ADMIN) {
+      await prisma.user.update({
+        where: { id: existing.id },
+        data: { role: Role.ADMIN, status: UserStatus.ACTIVE },
       });
-      services.set(key, service);
     }
+    console.log(`Admin preserved: ${PRESERVE_ADMIN_EMAIL}`);
+    return;
   }
 
-  const adminEmail =
-    process.env.DEFAULT_ADMIN_EMAIL ?? 'chinges_chinges@icloud.com';
-  const adminPassword =
-    process.env.DEFAULT_ADMIN_PASSWORD ?? 'ClinovaAdmin123!';
-  const adminPasswordHash = await bcrypt.hash(adminPassword, 10);
+  const pwd = process.env.DEFAULT_ADMIN_PASSWORD?.trim();
+  if (!pwd || pwd.length < 12) {
+    throw new Error(
+      'DEFAULT_ADMIN_PASSWORD must be set (min 12 chars) to create the initial admin — user not found.',
+    );
+  }
 
+  const passwordHash = await bcrypt.hash(pwd, 10);
   await prisma.user.create({
     data: {
-      email: adminEmail,
-      passwordHash: adminPasswordHash,
+      email: PRESERVE_ADMIN_EMAIL,
+      passwordHash,
       role: Role.ADMIN,
       status: UserStatus.ACTIVE,
-      firstName: 'Chinges',
-      lastName: 'Admin',
+      authProvider: AuthProvider.EMAIL,
+      emailVerified: true,
+      firstName: 'Admin',
+      lastName: 'Clinova',
     },
   });
+  console.log(`Admin created: ${PRESERVE_ADMIN_EMAIL}`);
+}
 
-  await prisma.user.create({
-    data: {
-      email: 'reception@clinova.mn',
-      passwordHash: await bcrypt.hash('ClinovaStaff123!', 10),
-      role: Role.STAFF,
-      status: UserStatus.ACTIVE,
-      firstName: 'Bolor',
-      lastName: 'Reception',
-      branchId: branches[0]!.id,
-      jobTitle: 'Receptionist',
-    },
-  });
-
-  const patientUser = await prisma.user.create({
-    data: {
-      email: 'patient@clinova.mn',
-      passwordHash: await bcrypt.hash('ClinovaPatient123!', 10),
-      role: Role.PATIENT,
-      status: UserStatus.ACTIVE,
-      firstName: 'Anu',
-      lastName: 'Patient',
-      phoneNumber: '+97699112233',
-      patientProfile: {
-        create: {
-          address: 'Zaisan, Ulaanbaatar',
-          emergencyContactName: 'Gerel',
-          emergencyContactPhone: '+97688112233',
+async function syncDoctorWeekSchedules(doctorId: string) {
+  for (const dayOfWeek of [1, 2, 3, 4, 5]) {
+    await prisma.doctorWeeklySchedule.deleteMany({
+      where: { doctorId, dayOfWeek },
+    });
+    await prisma.doctorWeeklySchedule.createMany({
+      data: [
+        {
+          doctorId,
+          dayOfWeek,
+          startTime: '09:00',
+          endTime: '12:00',
+          slotMinutes: 30,
+          isActive: true,
         },
-      },
-    },
-    include: {
-      patientProfile: true,
-    },
+        {
+          doctorId,
+          dayOfWeek,
+          startTime: '13:00',
+          endTime: '17:00',
+          slotMinutes: 30,
+          isActive: true,
+        },
+      ],
+    });
+  }
+}
+
+/** Next Mon–Fri datetime at hour/minute after dayOffset days (skip weekends). */
+function nextWeekdayAt(hour: number, minute: number, dayOffset: number): Date {
+  const d = new Date();
+  d.setDate(d.getDate() + dayOffset);
+  while (d.getDay() === 0 || d.getDay() === 6) {
+    d.setDate(d.getDate() + 1);
+  }
+  d.setHours(hour, minute, 0, 0);
+  if (d.getTime() <= Date.now() + 60_000) {
+    d.setDate(d.getDate() + 7);
+    while (d.getDay() === 0 || d.getDay() === 6) {
+      d.setDate(d.getDate() + 1);
+    }
+  }
+  return d;
+}
+
+async function refreshDemoAppointments(
+  patients: Array<{ userId: string; patientProfileId: string }>,
+  doctorsOrdered: Array<{
+    doctorId: string;
+    departmentId: string;
+    branchId: string;
+    primaryServiceId: string;
+  }>,
+) {
+  await prisma.appointment.deleteMany({
+    where: { reason: { in: [...DEMO_APPOINTMENT_REASONS] } },
   });
 
-  /**
-   * Every branch gets at least two doctors on different departments (mock roster).
-   * serviceSlugs must match keys created above for that branchCode.
-   */
-  const doctorSeeds: Array<{
-    email: string;
-    firstName: string;
-    lastName: string;
-    branchCode: string;
-    departmentName: string;
-    serviceSlugs: string[];
-    bio: string;
-    fee: number;
+  const specs: Array<{
+    patientIndex: number;
+    doctorIndex: number;
+    status: AppointmentStatus;
+    hour: number;
+    minute: number;
+    dayOffset: number;
+    reason: string;
   }> = [
     {
-      email: 'saruul@clinova.mn',
-      firstName: 'Saruul',
-      lastName: 'Bat',
-      branchCode: 'CENTRAL',
-      departmentName: 'ENT',
-      serviceSlugs: ['ent'],
-      bio: 'ENT specialist — Central branch.',
-      fee: 60_000,
+      patientIndex: 0,
+      doctorIndex: 0,
+      status: AppointmentStatus.CONFIRMED,
+      hour: 10,
+      minute: 0,
+      dayOffset: 1,
+      reason: DEMO_APPOINTMENT_REASONS[0],
     },
     {
-      email: 'ochir@clinova.mn',
-      firstName: 'Ochir',
-      lastName: 'Ganbold',
-      branchCode: 'CENTRAL',
-      departmentName: 'Pediatrics',
-      serviceSlugs: ['ped'],
-      bio: 'Pediatrician — well-child and acute care.',
-      fee: 70_000,
+      patientIndex: 1,
+      doctorIndex: 1,
+      status: AppointmentStatus.COMPLETED,
+      hour: 11,
+      minute: 0,
+      dayOffset: 2,
+      reason: DEMO_APPOINTMENT_REASONS[1],
     },
     {
-      email: 'namuun@clinova.mn',
-      firstName: 'Namuun',
-      lastName: 'Erdene',
-      branchCode: 'RIVER',
-      departmentName: 'Dermatology',
-      serviceSlugs: ['derm'],
-      bio: 'Dermatologist — Riverfront clinic.',
-      fee: 80_000,
+      patientIndex: 2,
+      doctorIndex: 2,
+      status: AppointmentStatus.PENDING,
+      hour: 14,
+      minute: 0,
+      dayOffset: 2,
+      reason: DEMO_APPOINTMENT_REASONS[2],
     },
     {
-      email: 'anar@clinova.mn',
-      firstName: 'Anar',
-      lastName: 'Bold',
-      branchCode: 'RIVER',
-      departmentName: 'Cardiology',
-      serviceSlugs: ['card'],
-      bio: 'Cardiology follow-up and risk counseling.',
-      fee: 95_000,
+      patientIndex: 0,
+      doctorIndex: 4,
+      status: AppointmentStatus.CONFIRMED,
+      hour: 10,
+      minute: 30,
+      dayOffset: 3,
+      reason: DEMO_APPOINTMENT_REASONS[3],
     },
     {
-      email: 'tsetsgee@clinova.mn',
-      firstName: 'Tsetsgee',
-      lastName: 'Lkhagvasuren',
-      branchCode: 'BAYANZURKH',
-      departmentName: 'Gynecology',
-      serviceSlugs: ['gyn'],
-      bio: "Women's health — Bayanzurkh branch.",
-      fee: 75_000,
-    },
-    {
-      email: 'munkh@clinova.mn',
-      firstName: 'Munkh-Erdene',
-      lastName: 'Dorj',
-      branchCode: 'BAYANZURKH',
-      departmentName: 'Neurology',
-      serviceSlugs: ['neuro'],
-      bio: 'Neurology outpatient consultations.',
-      fee: 88_000,
-    },
-    {
-      email: 'bold@clinova.mn',
-      firstName: 'Bold',
-      lastName: 'Saikhan',
-      branchCode: 'SONGINO',
-      departmentName: 'ENT',
-      serviceSlugs: ['ent'],
-      bio: 'ENT — Songinokhairkhan satellite clinic.',
-      fee: 60_000,
-    },
-    {
-      email: 'enkhjin@clinova.mn',
-      firstName: 'Enkhjin',
-      lastName: 'Tseren',
-      branchCode: 'SONGINO',
-      departmentName: 'Cardiology',
-      serviceSlugs: ['card'],
-      bio: 'Cardiology — Songinokhairkhan; focus on hypertension follow-up.',
-      fee: 85_000,
-    },
-    {
-      email: 'delgermaa@clinova.mn',
-      firstName: 'Delgermaa',
-      lastName: 'Purev',
-      branchCode: 'DARKHAN',
-      departmentName: 'Pediatrics',
-      serviceSlugs: ['ped'],
-      bio: 'Pediatrician — Darkhan regional hub.',
-      fee: 70_000,
-    },
-    {
-      email: 'batbayar@clinova.mn',
-      firstName: 'Batbayar',
-      lastName: 'Chuluun',
-      branchCode: 'DARKHAN',
-      departmentName: 'Dermatology',
-      serviceSlugs: ['derm'],
-      bio: 'Dermatology — Darkhan branch.',
-      fee: 80_000,
-    },
-    {
-      email: 'dental.central@clinova.mn',
-      firstName: 'Nandin',
-      lastName: 'Tsogoo',
-      branchCode: 'CENTRAL',
-      departmentName: 'Dentistry',
-      serviceSlugs: ['dent'],
-      bio: 'General dentistry — Central branch.',
-      fee: 55_000,
-    },
-    {
-      email: 'dental.river@clinova.mn',
-      firstName: 'Altangerel',
-      lastName: 'Smile',
-      branchCode: 'RIVER',
-      departmentName: 'Dentistry',
-      serviceSlugs: ['dent'],
-      bio: 'Dentistry — Riverfront.',
-      fee: 55_000,
-    },
-    {
-      email: 'dental.bayanzurkh@clinova.mn',
-      firstName: 'Oyunbold',
-      lastName: 'Dental',
-      branchCode: 'BAYANZURKH',
-      departmentName: 'Dentistry',
-      serviceSlugs: ['dent'],
-      bio: 'Dentistry — Bayanzurkh.',
-      fee: 55_000,
-    },
-    {
-      email: 'dental.songino@clinova.mn',
-      firstName: 'Enkhtuya',
-      lastName: 'Tooth',
-      branchCode: 'SONGINO',
-      departmentName: 'Dentistry',
-      serviceSlugs: ['dent'],
-      bio: 'Dentistry — Songinokhairkhan.',
-      fee: 55_000,
-    },
-    {
-      email: 'dental.darkhan@clinova.mn',
-      firstName: 'Munkhzul',
-      lastName: 'Dentist',
-      branchCode: 'DARKHAN',
-      departmentName: 'Dentistry',
-      serviceSlugs: ['dent'],
-      bio: 'Dentistry — Darkhan.',
-      fee: 55_000,
+      patientIndex: 1,
+      doctorIndex: 6,
+      status: AppointmentStatus.CONFIRMED,
+      hour: 15,
+      minute: 0,
+      dayOffset: 4,
+      reason: DEMO_APPOINTMENT_REASONS[4],
     },
   ];
 
-  const createdDoctors: Array<{
-    user: { id: string };
-    doctor: { id: string };
-  }> = [];
+  for (const spec of specs) {
+    const patient = patients[spec.patientIndex];
+    const doc = doctorsOrdered[spec.doctorIndex];
+    if (!patient || !doc) continue;
 
-  for (const item of doctorSeeds) {
-    const branch = branchByCode.get(item.branchCode);
-    if (!branch) {
-      throw new Error(`Unknown branch code: ${item.branchCode}`);
+    let startsAt = nextWeekdayAt(spec.hour, spec.minute, spec.dayOffset);
+    const svc = await prisma.service.findUnique({
+      where: { id: doc.primaryServiceId },
+    });
+    const duration = svc?.durationMinutes ?? 30;
+    let endsAt = new Date(startsAt.getTime() + duration * 60_000);
+
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const clash = await prisma.appointment.findFirst({
+        where: {
+          doctorId: doc.doctorId,
+          startsAt,
+          status: { not: AppointmentStatus.CANCELLED },
+        },
+      });
+      if (!clash) break;
+      startsAt = new Date(startsAt.getTime() + 30 * 60_000);
+      endsAt = new Date(startsAt.getTime() + duration * 60_000);
     }
 
-    const user = await prisma.user.create({
+    await prisma.appointment.create({
       data: {
-        email: item.email,
-        passwordHash: await bcrypt.hash('ClinovaDoctor123!', 10),
+        patientId: patient.patientProfileId,
+        doctorId: doc.doctorId,
+        branchId: doc.branchId,
+        departmentId: doc.departmentId,
+        serviceId: doc.primaryServiceId,
+        createdByUserId: patient.userId,
+        startsAt,
+        endsAt,
+        status: spec.status,
+        reason: spec.reason,
+      },
+    });
+  }
+}
+
+async function main() {
+  requireEnvDatabaseUrl();
+
+  const doctorPassword =
+    process.env.DEMO_DOCTOR_PASSWORD ?? 'ClinovaDoctor123!';
+  const patientPassword =
+    process.env.DEMO_PATIENT_PASSWORD ?? 'ClinovaPatient123!';
+  const doctorPasswordHash = await bcrypt.hash(doctorPassword, 10);
+  const patientPasswordHash = await bcrypt.hash(patientPassword, 10);
+
+  await ensureAdminAccount();
+
+  const branchMap = new Map<string, { id: string; code: string; name: string }>();
+  for (const b of BRANCH_SEEDS) {
+    const row = await prisma.branch.upsert({
+      where: { code: b.code },
+      create: {
+        code: b.code,
+        name: b.name,
+        address: b.address,
+        city: 'Улаанбаатар',
+        contactPhone: b.contactPhone,
+        contactEmail: b.contactEmail,
+        openingHours: b.openingHours,
+        status: BranchStatus.ACTIVE,
+        latitude: b.latitude,
+        longitude: b.longitude,
+      },
+      update: {
+        name: b.name,
+        address: b.address,
+        city: 'Улаанбаатар',
+        contactPhone: b.contactPhone,
+        contactEmail: b.contactEmail,
+        openingHours: b.openingHours,
+        status: BranchStatus.ACTIVE,
+        latitude: b.latitude,
+        longitude: b.longitude,
+      },
+    });
+    branchMap.set(b.code, { id: row.id, code: row.code, name: row.name });
+  }
+
+  const departmentMap = new Map<string, { id: string; name: string }>();
+  for (const d of DEPARTMENT_SEEDS) {
+    const row = await prisma.department.upsert({
+      where: { name: d.name },
+      create: {
+        name: d.name,
+        description: d.description,
+        status: DepartmentStatus.ACTIVE,
+      },
+      update: {
+        description: d.description,
+        status: DepartmentStatus.ACTIVE,
+      },
+    });
+    departmentMap.set(d.name, row);
+  }
+
+  const serviceKey = (branchId: string, serviceName: string) =>
+    `${branchId}::${serviceName}`;
+  const servicesByKey = new Map<
+    string,
+    { id: string; branchId: string; departmentId: string; durationMinutes: number }
+  >();
+
+  for (const branch of branchMap.values()) {
+    for (const s of SERVICE_SEEDS) {
+      const dept = departmentMap.get(s.departmentName);
+      if (!dept) throw new Error(`Missing department: ${s.departmentName}`);
+
+      const row = await prisma.service.upsert({
+        where: {
+          branchId_name: { branchId: branch.id, name: s.name },
+        },
+        create: {
+          name: s.name,
+          description: s.description,
+          branchId: branch.id,
+          departmentId: dept.id,
+          price: s.price,
+          durationMinutes: s.durationMinutes,
+          status: ServiceStatus.ACTIVE,
+        },
+        update: {
+          description: s.description,
+          departmentId: dept.id,
+          price: s.price,
+          durationMinutes: s.durationMinutes,
+          status: ServiceStatus.ACTIVE,
+        },
+      });
+      servicesByKey.set(serviceKey(branch.id, s.name), {
+        id: row.id,
+        branchId: branch.id,
+        departmentId: dept.id,
+        durationMinutes: row.durationMinutes,
+      });
+    }
+  }
+
+  const doctorResults: Array<{
+    userId: string;
+    doctorId: string;
+    branchId: string;
+    departmentId: string;
+    primaryServiceId: string;
+    email: string;
+  }> = [];
+
+  for (const doc of DOCTOR_SEEDS) {
+    const branch = branchMap.get(doc.branchCode);
+    if (!branch) throw new Error(`Unknown branch: ${doc.branchCode}`);
+    const dept = departmentMap.get(doc.departmentName);
+    if (!dept) throw new Error(`Unknown department: ${doc.departmentName}`);
+    const svc = servicesByKey.get(serviceKey(branch.id, doc.primaryServiceName));
+    if (!svc) throw new Error(`Missing service ${doc.primaryServiceName} for branch`);
+
+    const email = doc.email.trim().toLowerCase();
+    const phoneNumber = normalizeMnPhone(doc.phone);
+
+    const user = await prisma.user.upsert({
+      where: { email },
+      create: {
+        email,
+        passwordHash: doctorPasswordHash,
         role: Role.DOCTOR,
         status: UserStatus.ACTIVE,
-        firstName: item.firstName,
-        lastName: item.lastName,
+        authProvider: AuthProvider.EMAIL,
+        emailVerified: true,
+        firstName: doc.firstName,
+        lastName: doc.lastName,
+        phoneNumber,
         branchId: branch.id,
+        avatarUrl: avatarFor(email),
+      },
+      update: {
+        firstName: doc.firstName,
+        lastName: doc.lastName,
+        phoneNumber,
+        branchId: branch.id,
+        role: Role.DOCTOR,
+        status: UserStatus.ACTIVE,
+        emailVerified: true,
+        avatarUrl: avatarFor(email),
       },
     });
 
-    const serviceLinks = item.serviceSlugs.map((slug) => {
-      const key = `${slug}_${item.branchCode}`;
-      const svc = services.get(key);
-      if (!svc) {
-        throw new Error(`Missing service key ${key} for doctor ${item.email}`);
-      }
-      return { serviceId: svc.id };
-    });
-
-    const doctor = await prisma.doctorProfile.create({
-      data: {
+    const profile = await prisma.doctorProfile.upsert({
+      where: { userId: user.id },
+      create: {
         userId: user.id,
         branchId: branch.id,
-        departmentId: departments.get(item.departmentName)!.id,
-        bio: item.bio,
-        consultationFee: item.fee,
-        experienceYears: 6,
-        services: {
-          createMany: {
-            data: serviceLinks,
-          },
-        },
+        departmentId: dept.id,
+        bio: doc.bio,
+        experienceYears: doc.experienceYears,
+        consultationFee: doc.consultationFee,
+        avatarUrl: avatarFor(email),
+        active: true,
+      },
+      update: {
+        branchId: branch.id,
+        departmentId: dept.id,
+        bio: doc.bio,
+        experienceYears: doc.experienceYears,
+        consultationFee: doc.consultationFee,
+        avatarUrl: avatarFor(email),
+        active: true,
       },
     });
 
-    createdDoctors.push({ user, doctor });
+    await prisma.doctorService.upsert({
+      where: {
+        doctorId_serviceId: {
+          doctorId: profile.id,
+          serviceId: svc.id,
+        },
+      },
+      create: {
+        doctorId: profile.id,
+        serviceId: svc.id,
+      },
+      update: {},
+    });
 
-    for (const dayOfWeek of [1, 2, 3, 4, 5]) {
-      await prisma.doctorWeeklySchedule.create({
+    await syncDoctorWeekSchedules(profile.id);
+
+    doctorResults.push({
+      userId: user.id,
+      doctorId: profile.id,
+      branchId: branch.id,
+      departmentId: dept.id,
+      primaryServiceId: svc.id,
+      email,
+    });
+  }
+
+  const patientResults: Array<{ userId: string; patientProfileId: string }> = [];
+
+  for (const p of PATIENT_SEEDS) {
+    const email = p.email.trim().toLowerCase();
+    const phoneNumber = normalizeMnPhone(p.phone);
+
+    const user = await prisma.user.upsert({
+      where: { email },
+      create: {
+        email,
+        passwordHash: patientPasswordHash,
+        role: Role.PATIENT,
+        status: UserStatus.ACTIVE,
+        authProvider: AuthProvider.EMAIL,
+        emailVerified: true,
+        firstName: p.firstName,
+        lastName: p.lastName,
+        phoneNumber,
+      },
+      update: {
+        firstName: p.firstName,
+        lastName: p.lastName,
+        phoneNumber,
+        role: Role.PATIENT,
+        status: UserStatus.ACTIVE,
+        emailVerified: true,
+      },
+    });
+
+    const profile = await prisma.patientProfile.upsert({
+      where: { userId: user.id },
+      create: {
+        userId: user.id,
+        address: p.address,
+        emergencyContactName: 'Ойрын хүн',
+        emergencyContactPhone: phoneNumber,
+      },
+      update: {
+        address: p.address,
+        emergencyContactPhone: phoneNumber,
+      },
+    });
+
+    patientResults.push({ userId: user.id, patientProfileId: profile.id });
+  }
+
+  const demoMessageRoom =
+    patientResults[0] && doctorResults[0]
+      ? `room-${[patientResults[0].userId, doctorResults[0].userId].sort().join('-')}`
+      : null;
+
+  if (demoMessageRoom && patientResults[0] && doctorResults[0]) {
+    const text = 'Сайн байна уу эмч ээ, ойролцоох цагуудаас зөвлөгөө авах боломжтой юу?';
+    const exists = await prisma.message.findFirst({
+      where: {
+        roomId: demoMessageRoom,
+        senderId: patientResults[0].userId,
+        text,
+      },
+    });
+    if (!exists) {
+      await prisma.message.create({
         data: {
-          doctorId: doctor.id,
-          dayOfWeek,
-          startTime: '09:00',
-          endTime: '17:00',
-          slotMinutes: 30,
-          breaks: {
-            create: [{ startTime: '12:00', endTime: '13:00' }],
-          },
+          roomId: demoMessageRoom,
+          senderId: patientResults[0].userId,
+          receiverId: doctorResults[0].userId,
+          text,
         },
       });
     }
   }
 
-  const appointmentStart = new Date();
-  appointmentStart.setDate(appointmentStart.getDate() + 1);
-  appointmentStart.setHours(10, 30, 0, 0);
-  const appointmentEnd = new Date(appointmentStart.getTime() + 30 * 60_000);
+  const doctorsOrdered = doctorResults.map((r) => ({
+    doctorId: r.doctorId,
+    departmentId: r.departmentId,
+    branchId: r.branchId,
+    primaryServiceId: r.primaryServiceId,
+  }));
 
-  const central = branchByCode.get('CENTRAL')!;
-  const entCentral = services.get('ent_CENTRAL')!;
+  await refreshDemoAppointments(patientResults, doctorsOrdered);
 
-  await prisma.appointment.create({
-    data: {
-      patientId: patientUser.patientProfile!.id,
-      doctorId: createdDoctors[0]!.doctor.id,
-      branchId: central.id,
-      departmentId: departments.get('ENT')!.id,
-      serviceId: entCentral.id,
-      startsAt: appointmentStart,
-      endsAt: appointmentEnd,
-      status: AppointmentStatus.CONFIRMED,
-      reason: 'Ear pain and fever',
-      createdByUserId: patientUser.id,
-    },
-  });
-
-  await prisma.message.create({
-    data: {
-      roomId: [patientUser.id, createdDoctors[0]!.user.id].sort().join(':'),
-      senderId: patientUser.id,
-      receiverId: createdDoctors[0]!.user.id,
-      text: 'Сайн байна уу эмч ээ, маргаашийн цаг баталгаажсан уу?',
-    },
-  });
-
-  await prisma.jobApplication.create({
-    data: {
-      fullName: 'Temuulen Gan',
-      email: 'temuulen@example.com',
-      phone: '+97699110022',
-      desiredRole: 'Nurse',
-      branchId: central.id,
-      departmentId: departments.get('Pediatrics')!.id,
-      resumeUrl: 'https://example.com/resume/temuulen.pdf',
-      coverLetter: 'Interested in joining Clinova pediatrics team.',
-      status: JobApplicationStatus.PENDING,
-    },
-  });
-
+  console.log('--- Clinova demo seed (idempotent) complete ---');
+  console.log(`Branches: ${branchMap.size}, Departments: ${departmentMap.size}`);
   console.log(
-    `Clinova seed completed: ${branches.length} branches, ${services.size} services, ${createdDoctors.length} doctors.`,
+    `Services: ${SERVICE_SEEDS.length * branchMap.size} (${SERVICE_SEEDS.length} types × ${branchMap.size} branches)`,
   );
-  console.log('Demo credentials:');
-  console.log(`- Admin: ${adminEmail} / ${adminPassword}`);
-  console.log('- Patient: patient@clinova.mn / ClinovaPatient123!');
-  console.log('- Doctor: saruul@clinova.mn / ClinovaDoctor123!');
+  console.log(`Doctors: ${doctorResults.length}, Demo patients: ${patientResults.length}`);
+  console.log(`Admin: ${PRESERVE_ADMIN_EMAIL} (password unchanged if already existed)`);
+  console.log('Demo doctor password: (env DEMO_DOCTOR_PASSWORD or default ClinovaDoctor123!)');
+  console.log('Demo patient password: (env DEMO_PATIENT_PASSWORD or default ClinovaPatient123!)');
 }
 
 main()
