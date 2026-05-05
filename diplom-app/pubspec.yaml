@@ -70,6 +70,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -83,6 +84,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/
+    - assets/branding/
     - assets/videos/
     - assets/sounds/
 
@@ -116,3 +118,17 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# App / web / PWA launcher & favicon generation (source: assets/branding/clinova_logo.png).
+# Run: dart run flutter_launcher_icons
+flutter_launcher_icons:
+  image_path: assets/branding/clinova_logo.png
+  android: true
+  ios: true
+  adaptive_icon_background: '#F6FAFF'
+  adaptive_icon_foreground: assets/branding/clinova_logo.png
+  web:
+    generate: true
+    image_path: assets/branding/clinova_logo.png
+    background_color: '#F6FAFF'
+    theme_color: '#2563EB'

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/localization/context_l10n.dart';
 import '../../../core/widgets/clinova_backdrop.dart';
 import '../../../core/widgets/clinova_logo.dart';
+import '../../pwa/presentation/install_app_banner.dart';
 import 'widgets/hero_background_video_stub.dart'
     if (dart.library.html) 'widgets/hero_background_video_web.dart';
 
@@ -58,6 +59,7 @@ class WelcomeScreen extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        if (kIsWeb) const PwaWebAutoInstallTrigger(),
                         _Header(isDesktop: isDesktop, l10n: l10n),
                         SizedBox(height: isDesktop ? 34 : 20),
                         _HeroSection(

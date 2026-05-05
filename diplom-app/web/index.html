@@ -26,7 +26,7 @@
 
   <meta name="keywords" content="Clinova, clinic, Mongolia, dentist, appointment, telehealth, AI healthcare">
   <meta name="robots" content="index, follow">
-  <meta name="theme-color" content="#1769FF">
+  <meta name="theme-color" content="#2563EB">
 
   <!-- Билдэд tool/render_seo_assets.sh — canonical, og:url автоматаар -->
   <!-- CLINOVA_SEO_INJECT_BEGIN -->
@@ -36,13 +36,36 @@
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Clinova">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <link rel="icon" type="image/png" href="favicon.png"/>
 
   <link rel="manifest" href="manifest.json">
+
+  <script>
+    window.deferredInstallPrompt = null;
+    window.addEventListener('beforeinstallprompt', function (e) {
+      e.preventDefault();
+      window.deferredInstallPrompt = e;
+      window.dispatchEvent(new Event('clinova-pwa-install-available'));
+    });
+    window.addEventListener('appinstalled', function () {
+      window.deferredInstallPrompt = null;
+    });
+    window.clinovaPromptInstall = async function () {
+      if (!window.deferredInstallPrompt) return false;
+      window.deferredInstallPrompt.prompt();
+      var result = await window.deferredInstallPrompt.userChoice;
+      window.deferredInstallPrompt = null;
+      return result.outcome === 'accepted';
+    };
+    window.clinovaIsStandalone = function () {
+      return window.matchMedia('(display-mode: standalone)').matches ||
+        window.navigator.standalone === true;
+    };
+  </script>
 </head>
 <body>
   <!--

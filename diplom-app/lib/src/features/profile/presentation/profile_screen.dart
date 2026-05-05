@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,6 +9,8 @@ import '../../../core/widgets/clinova_backdrop.dart';
 import '../../../core/widgets/clinova_circle_avatar.dart';
 import '../../../core/widgets/clinova_logo.dart';
 import '../../auth/application/auth_controller.dart';
+import '../../pwa/application/clinova_pwa_bridge.dart';
+import '../../pwa/presentation/install_app_banner.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -162,6 +165,23 @@ class ProfileScreen extends ConsumerWidget {
                 ],
               ),
             ),
+            if (kIsWeb && !clinovaPwaIsStandalone()) ...[
+              const SizedBox(height: 16),
+              Card(
+                margin: EdgeInsets.zero,
+                child: ListTile(
+                  leading: Icon(Icons.add_to_home_screen_rounded, color: cs.primary),
+                  title: const Text('App суулгах'),
+                  subtitle: const Text('Clinova-г Home screen дээр нэмэх заавар'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => showClinovaPwaInstallSheet(
+                    context,
+                    ref: ref,
+                    markDismissedOnLater: false,
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 16),
             Card(
               child: Column(

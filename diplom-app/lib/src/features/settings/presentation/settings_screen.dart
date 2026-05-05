@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/localization/context_l10n.dart';
 import '../../../core/navigation/go_router_pop.dart';
 import '../../../core/widgets/clinova_backdrop.dart';
+import '../../pwa/presentation/install_app_banner.dart';
 import 'language_controller.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -68,6 +69,7 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 24),
+            const PwaSettingsInstallCard(),
             Text(
               l10n.settingsSectionLanguage,
               style: theme.textTheme.titleSmall?.copyWith(

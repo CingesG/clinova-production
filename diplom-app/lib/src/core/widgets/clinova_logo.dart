@@ -4,8 +4,8 @@ enum LogoVariant { light, dark, glass }
 
 /// Reusable Clinova logo with responsive scaling and UI-friendly variants.
 ///
-/// If your official transparent file differs, update [_assetForVariant].
-/// Replace this asset with transparent logo for best result.
+/// Mark assets: [LogoVariant.dark] uses `assets/branding/clinova_logo.png` (canonical brand).
+/// Light-on-dark heroes use `assets/images/clinova_logo_white.png`.
 class ClinovaLogo extends StatelessWidget {
   const ClinovaLogo({
     super.key,
@@ -118,7 +118,7 @@ class ClinovaLogo extends StatelessWidget {
   String _assetForVariant(LogoVariant variant) => switch (variant) {
         LogoVariant.light => 'assets/images/clinova_logo_white.png',
         LogoVariant.glass => 'assets/images/clinova_logo_white.png',
-        LogoVariant.dark => 'assets/images/clinova_logo_transparent.png',
+        LogoVariant.dark => 'assets/branding/clinova_logo.png',
       };
 }
 

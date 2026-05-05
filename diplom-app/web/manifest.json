@@ -5,7 +5,7 @@
     "scope": "/",
     "display": "standalone",
     "background_color": "#F6FAFF",
-    "theme_color": "#1769FF",
+    "theme_color": "#2563EB",
     "description": "Smart AI healthcare appointments and patient management (Clinova).",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
