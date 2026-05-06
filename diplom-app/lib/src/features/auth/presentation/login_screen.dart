@@ -12,7 +12,7 @@ import 'auth_marketing_side.dart';
 import 'auth_scaffold.dart';
 import 'auth_ui.dart';
 import 'auth_view_entrance.dart';
-import 'perform_clinova_google_sign_in.dart';
+import 'clinova_google_sign_in_button.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -76,8 +76,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       await prefs.setBool('clinova_remember_me', false);
     }
   }
-
-  Future<void> _onGoogleTap() => performClinovaGoogleSignIn(ref, context);
 
   @override
   Widget build(BuildContext context) {
@@ -254,29 +252,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                   ),
                   const SizedBox(height: 14),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF1D4ED8),
-                        side: const BorderSide(color: Color(0xFFBFDBFE)),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(18),
-                        ),
-                      ),
-                      onPressed: authState.isBusy ? null : _onGoogleTap,
-                      icon: const Text(
-                        'G',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF4285F4),
-                        ),
-                      ),
-                      label: Text(l10n.authGoogleContinue),
-                    ),
-                  ),
+                  ClinovaGoogleSignInButton(isBusy: authState.isBusy),
                   const SizedBox(height: 8),
                   Text(
                     l10n.authGoogleSkipsOtp,
