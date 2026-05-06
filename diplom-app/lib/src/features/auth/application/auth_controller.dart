@@ -522,7 +522,7 @@ class AuthController extends StateNotifier<AuthState> {
     } on DioException catch (error) {
       state = state.copyWith(
         isBusy: false,
-        errorMessage: _messageFromError(error),
+        errorMessage: _forgotPasswordErrorMessage(error),
       );
     }
   }
@@ -785,6 +785,24 @@ class AuthController extends StateNotifier<AuthState> {
 
   void dismissError() {
     state = state.copyWith(clearError: true);
+  }
+
+  /// Friendly copy for [forgotPassword] / forgot-flow resend; keeps English backend text out of the UI.
+  String _forgotPasswordErrorMessage(DioException error) {
+    final status = error.response?.statusCode;
+    if (status == 429) {
+      return _lookupL10n().authForgotRateLimitMessage;
+    }
+    final data = error.response?.data;
+    if (data is Map && data['message'] != null) {
+      final msg = data['message'].toString().toLowerCase();
+      if (msg.contains('please wait before requesting') ||
+          msg.contains('too many requests') ||
+          msg.contains('rate limit')) {
+        return _lookupL10n().authForgotRateLimitMessage;
+      }
+    }
+    return _messageFromError(error);
   }
 
   String _messageFromError(DioException error) {

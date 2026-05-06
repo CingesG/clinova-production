@@ -745,6 +745,14 @@ class AppLocalizationsEn extends AppLocalizations {
       'If this email is registered, we sent a 6-digit code.';
 
   @override
+  String get authForgotRateLimitMessage =>
+      'Please wait a moment before requesting another code.';
+
+  @override
+  String authForgotRetryAfterSeconds(int seconds) =>
+      'Try again in ${seconds}s';
+
+  @override
   String get authCodeSignInTitle => 'Sign in with email code';
 
   @override

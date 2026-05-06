@@ -803,6 +803,12 @@ abstract class AppLocalizations {
 
   String get authForgotSnackGeneric;
 
+  /// Rate limit / 429 on forgot-password (and related resend paths using the same API).
+  String get authForgotRateLimitMessage;
+
+  /// Countdown label while forgot-password submit is briefly disabled after a request.
+  String authForgotRetryAfterSeconds(int seconds);
+
   String get authCodeSignInTitle;
   String get authCodeSignInSubtitle;
   String get authRequestCodeTitle;

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:diplom_app/l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -24,12 +26,34 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
   static const _navy = Color(0xFF071B4D);
   static const _muted = Color(0xFF64748B);
   static const _primaryBlue = Color(0xFF1769FF);
+  static const _forgotSubmitCooldown = Duration(seconds: 60);
 
   final emailController = TextEditingController();
   bool successShown = false;
+  Timer? _submitCooldownTimer;
+  int _submitCooldownSecondsLeft = 0;
+
+  void _startSubmitCooldown() {
+    _submitCooldownTimer?.cancel();
+    setState(() => _submitCooldownSecondsLeft = _forgotSubmitCooldown.inSeconds);
+    _submitCooldownTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+      setState(() {
+        _submitCooldownSecondsLeft--;
+        if (_submitCooldownSecondsLeft <= 0) {
+          _submitCooldownSecondsLeft = 0;
+          t.cancel();
+        }
+      });
+    });
+  }
 
   @override
   void dispose() {
+    _submitCooldownTimer?.cancel();
     emailController.dispose();
     super.dispose();
   }
@@ -133,7 +157,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
                           borderRadius: BorderRadius.circular(18),
                         ),
                       ),
-                      onPressed: authState.isBusy
+                      onPressed: authState.isBusy || _submitCooldownSecondsLeft > 0
                           ? null
                           : () async {
                               final em = emailController.text.trim();
@@ -148,6 +172,9 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
                               auth.dismissError();
                               successShown = false;
                               await auth.requestForgotPassword(email: em);
+                              if (context.mounted) {
+                                _startSubmitCooldown();
+                              }
                             },
                       child: authState.isBusy
                           ? const SizedBox(
@@ -158,7 +185,13 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
                                 color: Colors.white,
                               ),
                             )
-                          : Text(l10n.authSendVerificationCode),
+                          : Text(
+                              _submitCooldownSecondsLeft > 0
+                                  ? l10n.authForgotRetryAfterSeconds(
+                                      _submitCooldownSecondsLeft,
+                                    )
+                                  : l10n.authSendVerificationCode,
+                            ),
                     ),
                   ),
                   const SizedBox(height: 12),

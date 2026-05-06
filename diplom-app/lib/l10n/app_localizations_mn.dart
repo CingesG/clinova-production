@@ -745,6 +745,14 @@ class AppLocalizationsMn extends AppLocalizations {
       'Энэ имэйл бүртгэлтэй бол 6 оронтой код илгээгдсэн.';
 
   @override
+  String get authForgotRateLimitMessage =>
+      'Код дахин авахын өмнө түр хүлээнэ үү.';
+
+  @override
+  String authForgotRetryAfterSeconds(int seconds) =>
+      'Дахин оролдох: ${seconds}с';
+
+  @override
   String get authCodeSignInTitle => 'Имэйл кодоор нэвтрэх';
 
   @override
