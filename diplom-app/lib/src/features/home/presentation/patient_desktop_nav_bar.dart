@@ -89,8 +89,10 @@ class PatientDesktopNavBar extends StatelessWidget {
                   ),
                   navLink(
                     label: l10n.homeNavServices,
-                    active: path.startsWith('/appointments-landing'),
-                    onTap: () => context.go('/appointments-landing'),
+                    active: path == '/chat-landing' ||
+                        path == '/doctor-chat' ||
+                        path.startsWith('/doctor-chat/'),
+                    onTap: () => context.go('/chat-landing'),
                   ),
                   navLink(
                     label: l10n.homeNavDoctors,
