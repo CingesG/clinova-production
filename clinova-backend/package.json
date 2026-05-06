@@ -18,7 +18,8 @@
     "prisma:delete-user": "ts-node prisma/delete-user-by-email.ts",
     "cleanup:users": "node scripts/cleanup-users.js",
     "cleanup:demo-doctors": "ts-node scripts/cleanup-demo-doctors.ts",
-    "credentials:demo": "tsx prisma/scripts/export-demo-credentials.ts"
+    "credentials:demo": "tsx prisma/scripts/export-demo-credentials.ts",
+    "admin:reset-password": "tsx scripts/reset-admin-password.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.8",
