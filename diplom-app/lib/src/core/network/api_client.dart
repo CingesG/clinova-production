@@ -12,6 +12,8 @@ bool _isAuthCredentialPath(String path) {
     '/auth/password-login',
     '/auth/register',
     '/auth/verify-otp',
+    '/auth/verify-email',
+    '/auth/resend-verification',
     '/auth/resend-login-otp',
     '/auth/request-otp',
     '/auth/forgot-password',

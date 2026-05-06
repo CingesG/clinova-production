@@ -115,19 +115,6 @@ export class AuthService {
     return this.normalizeEmail(email).endsWith(CLINOVA_LOCAL_DOMAIN);
   }
 
-  private isStaffPasswordBypassRole(role: Role): boolean {
-    return role === Role.ADMIN || role === Role.DOCTOR || role === Role.STAFF;
-  }
-
-  /** True when staff may complete password login without email OTP. */
-  private passwordOnlyStaffLoginEnabled(): boolean {
-    return (
-      this.config
-        .get<string>('ALLOW_PASSWORD_ONLY_STAFF_LOGIN', 'false')
-        .toLowerCase() === 'true'
-    );
-  }
-
   private async audit(
     userId: string | null,
     eventType: string,
@@ -715,12 +702,14 @@ export class AuthService {
       data: { consumedAt: new Date() },
     });
 
-    if (user.status === UserStatus.PENDING && purpose === OtpPurpose.REGISTER) {
+    if (purpose === OtpPurpose.REGISTER) {
       await this.prisma.user.update({
         where: { id: user.id },
         data: {
-          status: UserStatus.ACTIVE,
           emailVerified: true,
+          ...(user.status === UserStatus.PENDING
+            ? { status: UserStatus.ACTIVE }
+            : {}),
         },
       });
     }
@@ -737,7 +726,10 @@ export class AuthService {
     const tokens = await this.issueTokenPair(verified.id);
     await this.audit(verified.id, 'OTP_VERIFIED', { purpose });
     await this.audit(verified.id, 'LOGIN_SUCCESS', {
-      method: 'EMAIL_PASSWORD_OTP',
+      method:
+        purpose === OtpPurpose.REGISTER
+          ? 'EMAIL_VERIFICATION'
+          : 'EMAIL_OTP',
     });
 
     return {
@@ -869,11 +861,48 @@ export class AuthService {
     );
 
     return {
+      requiresEmailVerification: true,
       message: otpResult.message,
       expiresInSeconds: otpResult.expiresInSeconds,
       debugCode: otpResult.debugCode,
       emailDelivered: otpResult.emailDelivered,
     };
+  }
+
+  async verifyEmail(emailInput: string, code: string) {
+    return this.verifyOtp(emailInput, code, OtpPurpose.REGISTER);
+  }
+
+  /** Generic copy — never reveals whether the email exists. */
+  async resendVerification(emailInput: string) {
+    await this.ensureBootstrapSeeded();
+
+    const email = this.normalizeEmail(emailInput);
+    const generic = {
+      message:
+        'If an account exists and needs email verification, a verification code was sent.',
+    };
+
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (
+      !user ||
+      user.emailVerified ||
+      (user.status !== UserStatus.ACTIVE &&
+        user.status !== UserStatus.PENDING)
+    ) {
+      return generic;
+    }
+
+    try {
+      await this.createOtpAndEmail(email, user.id, OtpPurpose.REGISTER);
+    } catch (err) {
+      this.logger.warn(`resendVerification: failed for ${email}: ${err}`);
+    }
+
+    return generic;
   }
 
   async passwordLogin(emailInput: string, password: string) {
@@ -896,69 +925,43 @@ export class AuthService {
       throw new UnauthorizedException('Email or password is incorrect.');
     }
 
-    if (user.status === UserStatus.PENDING) {
-      throw new ForbiddenException(
-        'Please verify your email with the 6-digit code we sent, then sign in.',
-      );
-    }
-
-    if (user.status !== UserStatus.ACTIVE) {
+    if (
+      user.status !== UserStatus.ACTIVE &&
+      user.status !== UserStatus.PENDING
+    ) {
       throw new ForbiddenException('This account is not active.');
     }
 
-    const allowPasswordOnlyStaffLogin = this.passwordOnlyStaffLoginEnabled();
-    if (allowPasswordOnlyStaffLogin && this.isStaffPasswordBypassRole(user.role)) {
-      await this.audit(user.id, 'LOGIN_PASSWORD_ONLY_SUCCESS', { role: user.role });
-      return this.issueTokenPair(user.id);
-    }
-
-    if (this.isClinovaLocalMailbox(email)) {
-      await this.audit(user.id, 'LOGIN_CLINOVA_LOCAL_PASSWORD_ONLY', {
-        role: user.role,
+    if (!user.emailVerified) {
+      await this.audit(user.id, 'LOGIN_FAILED', {
+        reason: 'email_not_verified',
       });
-      return this.issueTokenPair(user.id);
+      throw new HttpException(
+        {
+          error: 'EMAIL_NOT_VERIFIED',
+          email: user.email,
+          message:
+            'Please verify your email with the 6-digit code. Use resend if needed.',
+        },
+        HttpStatus.FORBIDDEN,
+      );
     }
 
-    const demoPatientEmail = this.normalizeEmail(
-      this.config.get<string>('DEMO_PATIENT_EMAIL') ?? 'demo.patient@clinova.local',
-    );
-    const demoDoctorEmail = this.normalizeEmail(
-      this.config.get<string>('DEMO_DOCTOR_EMAIL') ?? 'demo.doctor@clinova.local',
-    );
-    const isDemoAccount =
-      user.email === demoPatientEmail || user.email === demoDoctorEmail;
-    if (isDemoAccount) {
-      await this.audit(user.id, 'LOGIN_DEMO_ACCOUNT_SUCCESS', { role: user.role });
-      return this.issueTokenPair(user.id);
+    if (user.status === UserStatus.PENDING) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { status: UserStatus.ACTIVE },
+      });
     }
 
-    const allowDirectPatientPasswordLogin =
-      this.config
-        .get<string>('ALLOW_DIRECT_PATIENT_PASSWORD_LOGIN', 'false')
-        .toLowerCase() === 'true';
-    if (allowDirectPatientPasswordLogin && user.role === Role.PATIENT) {
-      await this.audit(user.id, 'LOGIN_PASSWORD_DIRECT', { role: 'PATIENT' });
-      return this.issueTokenPair(user.id);
-    }
-
-    const otpResult = await this.createOtpAndEmail(
-      email,
-      user.id,
-      OtpPurpose.LOGIN,
-    );
-
-    return {
-      requiresEmailVerification: true,
-      email: user.email,
-      expiresInSeconds: otpResult.expiresInSeconds,
-      message:
-        'Check your email for a 6-digit code to finish signing in.',
-      debugCode: otpResult.debugCode,
-    };
+    await this.audit(user.id, 'LOGIN_SUCCESS', { method: 'EMAIL_PASSWORD' });
+    return this.issueTokenPair(user.id);
   }
 
-  async resendLoginOtp(emailInput: string, password: string) {
-    return this.passwordLogin(emailInput, password);
+  async resendLoginOtp(_emailInput: string, _password: string) {
+    throw new BadRequestException(
+      'Login no longer sends email codes. Use POST /auth/resend-verification if your email is not verified.',
+    );
   }
 
   private googleIdTokenAudiences(): string[] {

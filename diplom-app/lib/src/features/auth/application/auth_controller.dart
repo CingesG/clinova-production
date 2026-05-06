@@ -16,7 +16,8 @@ enum OtpIntent {
   signInCode,
   register,
   forgotPassword,
-  emailPasswordSecondFactor,
+  /// Finish registration or verify email after password login returned EMAIL_NOT_VERIFIED.
+  emailVerification,
 }
 
 class AuthState {
@@ -40,7 +41,7 @@ class AuthState {
   final String? pendingEmail;
   final String? pendingFirstName;
   final String? pendingLastName;
-  /// Short-lived: password step for resending login OTP. Cleared after verify/logout.
+  /// Short-lived: reserved for flows that needed password to resend (login OTP removed).
   final String? pendingPasswordForOtp;
   final OtpIntent? otpIntent;
   final String? debugCode;
@@ -224,15 +225,15 @@ class AuthController extends StateNotifier<AuthState> {
 
   /// Maps [AuthState.otpIntent] to the backend `purpose` for `POST /auth/verify-otp`.
   ///
-  /// Email/password login with OTP second factor uses [OtpIntent.emailPasswordSecondFactor]
-  /// and the same `LOGIN` purpose as passwordless email OTP ([OtpIntent.signInCode]).
+  /// Registration / email verification uses [POST /auth/verify-email] instead.
   String _otpPurposeForVerify() {
     switch (state.otpIntent) {
       case OtpIntent.register:
-        return 'REGISTER';
+      case OtpIntent.emailVerification:
+        throw StateError(
+          'Registration/email verification must use verify-email, not verify-otp.',
+        );
       case OtpIntent.signInCode:
-        return 'LOGIN';
-      case OtpIntent.emailPasswordSecondFactor:
         return 'LOGIN';
       case OtpIntent.forgotPassword:
         throw StateError(
@@ -250,7 +251,7 @@ class AuthController extends StateNotifier<AuthState> {
         : AppLocalizationsMn();
   }
 
-  /// Finishes sign-in after [passwordLogin] / [resendLoginOtp] returned tokens (no OTP step).
+  /// Finishes sign-in after [passwordLogin] returned tokens (no OTP step).
   Future<void> _applySuccessfulPasswordLoginResponse(
     Map<String, dynamic> response,
   ) async {
@@ -310,32 +311,25 @@ class AuthController extends StateNotifier<AuthState> {
             email: email,
             password: password,
           );
-      if (response['requiresEmailVerification'] == true) {
+      await _applySuccessfulPasswordLoginResponse(response);
+    } on DioException catch (error) {
+      final data = error.response?.data;
+      if (error.response?.statusCode == 403 &&
+          data is Map &&
+          data['error']?.toString() == 'EMAIL_NOT_VERIFIED') {
         final canonicalEmail =
-            response['email']?.toString().trim().toLowerCase() ??
+            data['email']?.toString().trim().toLowerCase() ??
                 email.trim().toLowerCase();
-        if (canonicalEmail.endsWith('@clinova.local')) {
-          state = state.copyWith(
-            isBusy: false,
-            errorMessage: _lookupL10n().authClinovaLocalUsePasswordOnly,
-          );
-          return;
-        }
-        final devCode = response['debugCode']?.toString();
         state = state.copyWith(
           stage: AuthStage.codeSent,
           pendingEmail: canonicalEmail,
-          otpIntent: OtpIntent.emailPasswordSecondFactor,
-          pendingPasswordForOtp: password,
-          clearDebugCode: devCode == null,
-          debugCode: devCode,
+          otpIntent: OtpIntent.emailVerification,
+          clearPendingPasswordForOtp: true,
           isBusy: false,
           clearError: true,
         );
         return;
       }
-      await _applySuccessfulPasswordLoginResponse(response);
-    } on DioException catch (error) {
       state = state.copyWith(
         isBusy: false,
         errorMessage: _messageFromError(error),
@@ -564,49 +558,9 @@ class AuthController extends StateNotifier<AuthState> {
       case OtpIntent.forgotPassword:
         await requestForgotPassword(email: email);
         return;
-      case OtpIntent.emailPasswordSecondFactor:
-        final password = state.pendingPasswordForOtp;
-        if (password == null || password.isEmpty) return;
-        state = state.copyWith(isBusy: true, clearError: true);
-        try {
-          final response = await _ref.read(clinovaApiProvider).resendLoginOtp(
-                email: email,
-                password: password,
-              );
-          if (response['requiresEmailVerification'] == true) {
-            final canonical = response['email']?.toString().trim().toLowerCase() ??
-                email.trim().toLowerCase();
-            if (canonical.endsWith('@clinova.local')) {
-              state = state.copyWith(
-                isBusy: false,
-                errorMessage: _lookupL10n().authClinovaLocalUsePasswordOnly,
-              );
-              return;
-            }
-            final devCode = response['debugCode']?.toString();
-            state = state.copyWith(
-              isBusy: false,
-              clearDebugCode: devCode == null,
-              debugCode: devCode,
-              clearError: true,
-            );
-            return;
-          }
-          await _applySuccessfulPasswordLoginResponse(response);
-        } on DioException catch (error) {
-          state = state.copyWith(
-            isBusy: false,
-            errorMessage: _messageFromError(error),
-          );
-        }
-        return;
       case OtpIntent.register:
-        await requestOtp(
-          email: email,
-          firstName: state.pendingFirstName,
-          lastName: state.pendingLastName,
-          otpIntent: OtpIntent.register,
-        );
+      case OtpIntent.emailVerification:
+        await _resendVerificationEmail(email);
         return;
       case OtpIntent.signInCode:
         await requestOtp(
@@ -622,6 +576,19 @@ class AuthController extends StateNotifier<AuthState> {
           firstName: state.pendingFirstName,
           lastName: state.pendingLastName,
         );
+    }
+  }
+
+  Future<void> _resendVerificationEmail(String email) async {
+    state = state.copyWith(isBusy: true, clearError: true);
+    try {
+      await _ref.read(clinovaApiProvider).resendVerification(email: email);
+      state = state.copyWith(isBusy: false, clearError: true);
+    } on DioException catch (error) {
+      state = state.copyWith(
+        isBusy: false,
+        errorMessage: _messageFromError(error),
+      );
     }
   }
 
@@ -671,12 +638,26 @@ class AuthController extends StateNotifier<AuthState> {
     state = state.copyWith(isBusy: true, clearError: true);
 
     try {
-      final purpose = _otpPurposeForVerify();
-      final response = await _ref.read(clinovaApiProvider).verifyOtp(
-            email: email,
-            otp: otp,
-            purpose: purpose,
-          );
+      final Map<String, dynamic> response;
+      switch (state.otpIntent) {
+        case OtpIntent.register:
+        case OtpIntent.emailVerification:
+          response = await _ref.read(clinovaApiProvider).verifyEmail(
+                email: email,
+                code: otp,
+              );
+          break;
+        case OtpIntent.signInCode:
+          response = await _ref.read(clinovaApiProvider).verifyOtp(
+                email: email,
+                otp: otp,
+                purpose: _otpPurposeForVerify(),
+              );
+          break;
+        case OtpIntent.forgotPassword:
+        case null:
+          throw StateError('Invalid OTP intent for verifyOtp.');
+      }
       final token = response['accessToken']?.toString() ?? '';
       if (token.isEmpty) {
         state = state.copyWith(

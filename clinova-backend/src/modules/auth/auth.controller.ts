@@ -52,6 +52,19 @@ class VerifyOtpDto {
   purpose!: OtpPurpose;
 }
 
+class VerifyEmailDto {
+  @IsEmail()
+  email!: string;
+
+  @Length(6, 6)
+  code!: string;
+}
+
+class ResendVerificationDto {
+  @IsEmail()
+  email!: string;
+}
+
 class RegisterDto extends RequestOtpDto {
   @IsOptional()
   @MinLength(8)
@@ -131,6 +144,18 @@ export class AuthController {
   @Throttle({ default: { limit: 15, ttl: 60000 } })
   verifyOtp(@Body() dto: VerifyOtpDto) {
     return this.authService.verifyOtp(dto.email, dto.otp, dto.purpose);
+  }
+
+  @Post('verify-email')
+  @Throttle({ default: { limit: 15, ttl: 60000 } })
+  verifyEmail(@Body() dto: VerifyEmailDto) {
+    return this.authService.verifyEmail(dto.email, dto.code);
+  }
+
+  @Post('resend-verification')
+  @Throttle({ default: { limit: 8, ttl: 60000 } })
+  resendVerification(@Body() dto: ResendVerificationDto) {
+    return this.authService.resendVerification(dto.email);
   }
 
   @Post('register')

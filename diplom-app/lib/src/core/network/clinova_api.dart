@@ -28,6 +28,27 @@ class ClinovaApi {
     return _asMap(response.data);
   }
 
+  Future<Map<String, dynamic>> verifyEmail({
+    required String email,
+    required String code,
+  }) async {
+    final response = await _dio.post(
+      '/auth/verify-email',
+      data: {'email': email, 'code': code},
+    );
+    return _asMap(response.data);
+  }
+
+  Future<Map<String, dynamic>> resendVerification({
+    required String email,
+  }) async {
+    final response = await _dio.post(
+      '/auth/resend-verification',
+      data: {'email': email},
+    );
+    return _asMap(response.data);
+  }
+
   Future<Map<String, dynamic>> verifyOtp({
     required String email,
     required String otp,
