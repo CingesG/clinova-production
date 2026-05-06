@@ -21,13 +21,18 @@ class ClinovaApp extends ConsumerWidget {
       builder: (context, child) {
         return Stack(
           fit: StackFit.expand,
+          clipBehavior: Clip.none,
           children: [
-            RealtimeConnectionScope(
-              child: child ?? const SizedBox.shrink(),
+            Positioned.fill(
+              child: RealtimeConnectionScope(
+                child: child ?? const SizedBox.shrink(),
+              ),
             ),
             if (kIsWeb)
-              const Align(
-                alignment: Alignment.bottomCenter,
+              const Positioned(
+                left: 16,
+                right: 16,
+                bottom: 16,
                 child: ClinovaWebInstallBar(),
               ),
           ],

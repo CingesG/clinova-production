@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../../core/network/clinova_api.dart';
 import '../../../core/widgets/clinova_backdrop.dart';
+import '../../../core/widgets/premium_healthcare_shell.dart';
 
 class DoctorScheduleScreen extends ConsumerStatefulWidget {
   const DoctorScheduleScreen({super.key});
@@ -61,35 +62,62 @@ class _DoctorScheduleScreenState extends ConsumerState<DoctorScheduleScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: ClinovaPremium.surfaceTint,
       appBar: AppBar(
+        elevation: 0,
+        backgroundColor: ClinovaPremium.surfaceTint,
+        surfaceTintColor: Colors.transparent,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded),
           onPressed: () => context.go('/doctor'),
         ),
-        title: const Text('Миний хуваарь'),
+        title: const Text(
+          'Миний хуваарь',
+          style: TextStyle(
+            color: ClinovaPremium.navy,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
       ),
       body: ClinovaBackdrop(
         child: SafeArea(
           child: Column(
             children: [
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-                child: Row(
-                  children: [
-                    for (final s in const ['ALL', 'PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELLED'])
-                      Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: ChoiceChip(
-                          label: Text(s),
-                          selected: _status == s,
-                          onSelected: (_) {
-                            setState(() => _status = s);
-                            _load();
-                          },
-                        ),
-                      ),
-                  ],
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        for (final s in const [
+                          'ALL',
+                          'PENDING',
+                          'CONFIRMED',
+                          'COMPLETED',
+                          'CANCELLED',
+                        ])
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: FilterChip(
+                              label: Text(s),
+                              selected: _status == s,
+                              onSelected: (_) {
+                                setState(() => _status = s);
+                                _load();
+                              },
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              showCheckmark: false,
+                              selectedColor: ClinovaPremium.pillBlueBg,
+                              checkmarkColor: ClinovaPremium.primary,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
               Expanded(
@@ -109,13 +137,7 @@ class _DoctorScheduleScreenState extends ConsumerState<DoctorScheduleScreen> {
                           final time = starts == null
                               ? '--'
                               : DateFormat('yyyy-MM-dd HH:mm').format(starts.toLocal());
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 10),
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.93),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
+                          return PremiumAppointmentCard(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [

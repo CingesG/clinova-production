@@ -8,6 +8,7 @@ import '../../../core/navigation/go_router_pop.dart';
 import '../../../core/widgets/clinova_backdrop.dart';
 import '../../../core/widgets/clinova_circle_avatar.dart';
 import '../../../core/widgets/clinova_logo.dart';
+import '../../../core/widgets/premium_healthcare_shell.dart';
 import '../../auth/application/auth_controller.dart';
 import '../../pwa/application/clinova_pwa_bridge.dart';
 import '../../pwa/presentation/install_app_banner.dart';
@@ -55,18 +56,12 @@ class ProfileScreen extends ConsumerWidget {
                     width: double.infinity,
                     padding: const EdgeInsets.all(22),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.94),
-                      borderRadius: BorderRadius.circular(28),
+                      color: Colors.white.withValues(alpha: 0.97),
+                      borderRadius: BorderRadius.circular(ClinovaPremium.radiusLg),
                       border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.85),
+                        color: ClinovaPremium.border.withValues(alpha: 0.65),
                       ),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x100F172A),
-                          blurRadius: 24,
-                          offset: Offset(0, 14),
-                        ),
-                      ],
+                      boxShadow: ClinovaPremium.cardShadow,
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -108,16 +103,12 @@ class ProfileScreen extends ConsumerWidget {
             Container(
               padding: const EdgeInsets.all(22),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.94),
-                borderRadius: BorderRadius.circular(28),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.85)),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x100F172A),
-                    blurRadius: 24,
-                    offset: Offset(0, 14),
-                  ),
-                ],
+                color: Colors.white.withValues(alpha: 0.97),
+                borderRadius: BorderRadius.circular(ClinovaPremium.radiusLg),
+                border: Border.all(
+                  color: ClinovaPremium.border.withValues(alpha: 0.65),
+                ),
+                boxShadow: ClinovaPremium.cardShadow,
               ),
               child: Row(
                 children: [

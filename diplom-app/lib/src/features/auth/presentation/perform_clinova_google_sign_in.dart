@@ -46,8 +46,9 @@ Future<void> performClinovaGoogleSignIn(WidgetRef ref, BuildContext context) asy
 
   // Web: OAuth web client in constructor + index.html meta. Mobile: platform OAuth client from
   // native config; serverClientId must be the *web* client ID so id_token aud matches backend.
+  // Basic Sign in with Google only — no Gmail/Drive/Calendar or other sensitive scopes.
   final google = GoogleSignIn(
-    scopes: const ['email', 'openid'],
+    scopes: const ['openid', 'email', 'profile'],
     clientId: kIsWeb ? googleClientId : null,
     serverClientId: kIsWeb ? null : googleClientId,
   );

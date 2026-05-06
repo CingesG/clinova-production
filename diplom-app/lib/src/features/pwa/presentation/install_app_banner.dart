@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/widgets/clinova_logo.dart';
+import '../../../core/widgets/premium_healthcare_shell.dart';
 import '../../settings/presentation/language_controller.dart';
 import '../application/clinova_pwa_bridge.dart';
 
@@ -346,22 +347,6 @@ class _SettingsStyleCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.94),
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.85)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x100F172A),
-            blurRadius: 24,
-            offset: Offset(0, 14),
-          ),
-        ],
-      ),
-      child: child,
-    );
+    return PremiumSettingsSurface(child: child);
   }
 }

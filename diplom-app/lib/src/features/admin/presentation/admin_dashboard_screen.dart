@@ -9,6 +9,7 @@ import '../../../core/localization/context_l10n.dart';
 import '../../../core/media/clinova_gallery_image.dart';
 import '../../../core/network/clinova_api.dart';
 import '../../../core/widgets/clinova_backdrop.dart';
+import '../../../core/widgets/premium_healthcare_shell.dart';
 import '../../auth/application/auth_controller.dart';
 
 class AdminDashboardScreen extends ConsumerStatefulWidget {
@@ -1062,7 +1063,6 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final theme = Theme.of(context);
     final user = ref.watch(authControllerProvider).user;
     final isMobile = MediaQuery.of(context).size.width < 760;
 
@@ -1070,7 +1070,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
       key: _scaffoldKey,
       appBar: isMobile
           ? AppBar(
-              title: const Text('Админ удирдлага'),
+              title: Text(l10n.adminControlTitle),
               leading: IconButton(
                 icon: const Icon(Icons.menu_rounded),
                 onPressed: () => _scaffoldKey.currentState?.openDrawer(),
@@ -1149,111 +1149,56 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                         32,
                       ),
                       children: [
-                        Container(
-                          padding: EdgeInsets.all(isMobile ? 14 : 18),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.94),
-                            borderRadius: BorderRadius.circular(24),
-                            boxShadow: const [
-                              BoxShadow(
-                                color: Color(0x120F172A),
-                                blurRadius: 24,
-                                offset: Offset(0, 10),
-                              ),
-                            ],
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Админ удирдлага',
-                                      style: theme.textTheme.headlineSmall
-                                          ?.copyWith(
-                                            fontSize: isMobile ? 22 : null,
-                                            color: const Color(0xFF0F172A),
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      'Clinova системийн ерөнхий хяналтын самбар',
-                                      style: theme.textTheme.bodyLarge
-                                          ?.copyWith(
-                                            color: const Color(0xFF475569),
-                                          ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              if (!isMobile) ...[
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFEAF2FF),
-                                    borderRadius: BorderRadius.circular(999),
-                                  ),
-                                  child: Text(
-                                    user?.displayName ?? l10n.adminDefaultName,
-                                    style: const TextStyle(
-                                      color: Color(0xFF1D4ED8),
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                IconButton(
-                                  onPressed: _refresh,
-                                  icon: const Icon(Icons.refresh_rounded),
-                                ),
-                                IconButton(
-                                  onPressed: () => ref
-                                      .read(authControllerProvider.notifier)
-                                      .logout(),
-                                  icon: const Icon(Icons.logout_rounded),
-                                ),
-                              ] else
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFEAF2FF),
-                                    borderRadius: BorderRadius.circular(999),
-                                  ),
-                                  child: Text(
-                                    user?.displayName ?? l10n.adminDefaultName,
-                                    style: const TextStyle(
-                                      color: Color(0xFF1D4ED8),
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
+                        PremiumDashboardHeader(
+                          title: l10n.adminControlTitle,
+                          subtitle:
+                              'Clinova системийн ерөнхий хяналтын самбар',
+                          namePill: user?.displayName ?? l10n.adminDefaultName,
+                          narrow: isMobile,
+                          showIconActions: !isMobile,
+                          onRefresh: _refresh,
+                          onLogout: () => ref
+                              .read(authControllerProvider.notifier)
+                              .logout(),
                         ),
+                        const SizedBox(height: 18),
+                        _AdminHero(key: _dashboardStatsKey, stats: stats, l10n: l10n),
                         const SizedBox(height: 16),
-                        _AdminHero(key: _dashboardStatsKey, stats: stats),
-                        const SizedBox(height: 16),
-                        _AdminSection(
+                        PremiumSectionCard(
                           title: 'Шуурхай үйлдлүүд',
+                          icon: Icons.bolt_rounded,
                           child: Wrap(
                             spacing: 10,
                             runSpacing: 10,
                             children: [
                               FilledButton.icon(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: ClinovaPremium.primary,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 18,
+                                    vertical: 14,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
                                 onPressed: _showCreateBranchDialog,
                                 icon: const Icon(Icons.add_business_rounded),
-                                label: const Text('Салбар нэмэх'),
+                                label: Text(l10n.adminAddBranch),
                               ),
                               FilledButton.icon(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: ClinovaPremium.primary,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 18,
+                                    vertical: 14,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
                                 onPressed: () => _showCreateServiceDialog(
                                   branches,
                                   departments,
@@ -1261,24 +1206,63 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                                 icon: const Icon(
                                   Icons.medical_services_rounded,
                                 ),
-                                label: const Text('Үйлчилгээ нэмэх'),
+                                label: Text(l10n.adminAddService),
                               ),
                               FilledButton.icon(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: ClinovaPremium.primary,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 18,
+                                    vertical: 14,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
                                 onPressed: () => _showCreateDoctorDialog(
                                   branches,
                                   departments,
                                   services,
                                 ),
                                 icon: const Icon(Icons.person_add_alt_rounded),
-                                label: const Text('Эмч нэмэх'),
+                                label: Text(l10n.adminAddDoctor),
                               ),
                               OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: ClinovaPremium.textPrimary,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 14,
+                                  ),
+                                  side: BorderSide(
+                                    color: ClinovaPremium.border
+                                        .withValues(alpha: 0.9),
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
                                 onPressed: () =>
                                     _scrollToSection(_jobApplicationsKey),
                                 icon: const Icon(Icons.assignment_rounded),
                                 label: const Text('Өргөдөл харах'),
                               ),
                               OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: ClinovaPremium.textPrimary,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 14,
+                                  ),
+                                  side: BorderSide(
+                                    color: ClinovaPremium.border
+                                        .withValues(alpha: 0.9),
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
                                 onPressed: () =>
                                     _scrollToSection(_dashboardStatsKey),
                                 icon: const Icon(Icons.analytics_rounded),
@@ -1288,8 +1272,9 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                           ),
                         ),
                         const SizedBox(height: 14),
-                        _AdminSection(
+                        PremiumSectionCard(
                           title: 'Хэрэглэгчийн удирдлага',
+                          icon: Icons.group_rounded,
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -1348,7 +1333,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                               ),
                               const SizedBox(height: 12),
                               if (filteredUsers.isEmpty)
-                                const _EmptyState(
+                                PremiumEmptyState(
                                   icon: Icons.group_off_rounded,
                                   title: 'Одоогоор бүртгэлтэй хэрэглэгч алга.',
                                   subtitle:
@@ -1357,9 +1342,31 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                               else if (isMobile)
                                 _buildMobileUsersList(filteredUsers)
                               else
-                                SingleChildScrollView(
-                                  scrollDirection: Axis.horizontal,
-                                  child: DataTable(
+                                Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color: ClinovaPremium.border
+                                          .withValues(alpha: 0.75),
+                                    ),
+                                  ),
+                                  clipBehavior: Clip.antiAlias,
+                                  child: SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: Theme(
+                                      data: Theme.of(context).copyWith(
+                                        dividerColor: ClinovaPremium.border
+                                            .withValues(alpha: 0.35),
+                                      ),
+                                      child: DataTable(
+                                    headingRowHeight: 48,
+                                    dataRowMinHeight: 52,
+                                    headingTextStyle: const TextStyle(
+                                      color: ClinovaPremium.navy,
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 13,
+                                    ),
                                     columns: const [
                                       DataColumn(label: Text('Хэрэглэгч')),
                                       DataColumn(label: Text('Role')),
@@ -1460,6 +1467,8 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                                         ],
                                       );
                                     }).toList(),
+                                      ),
+                                    ),
                                   ),
                                 ),
                             ],
@@ -1468,64 +1477,72 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                         const SizedBox(height: 14),
                         KeyedSubtree(
                           key: _jobApplicationsKey,
-                          child: _AdminSection(
-                          title: l10n.adminJobApplications,
-                          child: applications.isEmpty
-                              ? const _EmptyState(
-                                  icon: Icons.assignment_late_rounded,
-                                  title: 'Одоогоор өргөдөл алга.',
-                                  subtitle:
-                                      'Шинэ ажлын өргөдөл ирэхэд энэ хэсэгт харагдана.',
-                                )
-                              : Column(
-                                  children: applications.take(6).map((
-                                    application,
-                                  ) {
-                                    return ListTile(
-                                      contentPadding: EdgeInsets.zero,
-                                      leading: const Icon(
-                                        Icons.description_rounded,
-                                      ),
-                                      title: Text(
-                                        application['fullName']?.toString() ??
-                                            '',
-                                      ),
-                                      subtitle: Text(
-                                        '${application['desiredRole']} • ${application['status']}',
-                                      ),
-                                      trailing: PopupMenuButton<String>(
-                                        onSelected: (status) =>
-                                            _updateApplicationStatus(
-                                              application,
-                                              status,
+                          child: PremiumSectionCard(
+                            title: l10n.adminJobApplications,
+                            icon: Icons.assignment_rounded,
+                            child: applications.isEmpty
+                                ? PremiumEmptyState(
+                                    icon: Icons.assignment_late_rounded,
+                                    title: 'Одоогоор өргөдөл алга.',
+                                    subtitle:
+                                        'Шинэ ажлын өргөдөл ирэхэд энэ хэсэгт харагдана.',
+                                  )
+                                : Column(
+                                    children:
+                                        applications.take(6).map((
+                                      application,
+                                    ) {
+                                      return ListTile(
+                                        contentPadding: EdgeInsets.zero,
+                                        leading: const Icon(
+                                          Icons.description_rounded,
+                                        ),
+                                        title: Text(
+                                          application['fullName']
+                                                  ?.toString() ??
+                                              '',
+                                        ),
+                                        subtitle: Text(
+                                          '${application['desiredRole']} • ${application['status']}',
+                                        ),
+                                        trailing: PopupMenuButton<String>(
+                                          onSelected: (status) =>
+                                              _updateApplicationStatus(
+                                                application,
+                                                status,
+                                              ),
+                                          itemBuilder: (menuCtx) => [
+                                            PopupMenuItem(
+                                              value: 'REVIEWING',
+                                              child: Text(
+                                                  l10n.adminJobReviewing),
                                             ),
-                                        itemBuilder: (menuCtx) => [
-                                          PopupMenuItem(
-                                            value: 'REVIEWING',
-                                            child: Text(l10n.adminJobReviewing),
-                                          ),
-                                          PopupMenuItem(
-                                            value: 'INTERVIEW',
-                                            child: Text(l10n.adminJobInterview),
-                                          ),
-                                          PopupMenuItem(
-                                            value: 'ACCEPTED',
-                                            child: Text(l10n.adminJobAccepted),
-                                          ),
-                                          PopupMenuItem(
-                                            value: 'REJECTED',
-                                            child: Text(l10n.adminJobRejected),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                  }).toList(),
-                                ),
-                        ),
+                                            PopupMenuItem(
+                                              value: 'INTERVIEW',
+                                              child: Text(
+                                                  l10n.adminJobInterview),
+                                            ),
+                                            PopupMenuItem(
+                                              value: 'ACCEPTED',
+                                              child: Text(
+                                                  l10n.adminJobAccepted),
+                                            ),
+                                            PopupMenuItem(
+                                              value: 'REJECTED',
+                                              child: Text(
+                                                  l10n.adminJobRejected),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }).toList(),
+                                  ),
+                          ),
                         ),
                         const SizedBox(height: 14),
-                        _AdminSection(
+                        PremiumSectionCard(
                           title: 'Салбар, үйлчилгээ, эмчийн товч мэдээлэл',
+                          icon: Icons.insights_rounded,
                           child: Column(
                             children: [
                               _miniListTile(
@@ -1565,18 +1582,35 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
     required int count,
   }) {
     return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(icon, color: const Color(0xFF1D4ED8)),
-      title: Text(title),
-      trailing: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      contentPadding: const EdgeInsets.symmetric(vertical: 6),
+      leading: Container(
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: const Color(0xFFE2E8F0),
+          color: ClinovaPremium.pillBlueBg,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Icon(icon, color: ClinovaPremium.primary, size: 22),
+      ),
+      title: Text(
+        title,
+        style: const TextStyle(
+          fontWeight: FontWeight.w600,
+          color: ClinovaPremium.textPrimary,
+        ),
+      ),
+      trailing: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: ClinovaPremium.surfaceTint,
           borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: ClinovaPremium.border.withValues(alpha: 0.7)),
         ),
         child: Text(
           '$count',
-          style: const TextStyle(fontWeight: FontWeight.w700),
+          style: const TextStyle(
+            fontWeight: FontWeight.w800,
+            color: ClinovaPremium.primaryInk,
+          ),
         ),
       ),
     );
@@ -1584,21 +1618,31 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
 }
 
 class _AdminHero extends StatelessWidget {
-  const _AdminHero({super.key, required this.stats});
+  const _AdminHero({
+    super.key,
+    required this.stats,
+    required this.l10n,
+  });
 
   final Map<String, dynamic> stats;
+  final AppLocalizations l10n;
 
   @override
   Widget build(BuildContext context) {
+    const footer = 'Системийн бодит өгөгдөл';
     final List<(String, String, IconData)> items = [
       (
-        'Нийт хэрэглэгч',
+        l10n.adminHeroUsers,
         stats['totalUsers']?.toString() ?? '0',
         Icons.group_rounded,
       ),
-      ('Эмч', stats['totalDoctors']?.toString() ?? '0', Icons.badge_rounded),
       (
-        'Өвчтөн',
+        l10n.adminHeroDoctors,
+        stats['totalDoctors']?.toString() ?? '0',
+        Icons.badge_rounded,
+      ),
+      (
+        l10n.adminHeroPatients,
         stats['totalPatients']?.toString() ?? '0',
         Icons.personal_injury_rounded,
       ),
@@ -1613,12 +1657,12 @@ class _AdminHero extends StatelessWidget {
         Icons.check_circle_rounded,
       ),
       (
-        'Өргөдөл',
+        l10n.adminHeroJobs,
         stats['applicationsCount']?.toString() ?? '0',
         Icons.description_rounded,
       ),
       (
-        'Салбар',
+        l10n.adminHeroBranches,
         stats['activeBranches']?.toString() ?? '0',
         Icons.apartment_rounded,
       ),
@@ -1645,69 +1689,27 @@ class _AdminHero extends StatelessWidget {
         final crossAxisCount = width >= 1150
             ? 5
             : width >= 900
-            ? 4
-            : width >= 650
-            ? 2
-            : 1;
+                ? 4
+                : width >= 650
+                    ? 2
+                    : 1;
         return GridView.builder(
           itemCount: items.length,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: crossAxisCount,
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
-            childAspectRatio: crossAxisCount == 1 ? 3.2 : 1.8,
+            crossAxisSpacing: 14,
+            mainAxisSpacing: 14,
+            mainAxisExtent: 122,
           ),
           itemBuilder: (context, index) {
             final item = items[index];
-            return Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFFF8FBFF), Color(0xFFEEF7FF)],
-                ),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: const Color(0xFFDDEBFF)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Row(
-                    children: [
-                      Icon(item.$3, color: const Color(0xFF1D4ED8), size: 18),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          item.$1,
-                          style: const TextStyle(
-                            color: Color(0xFF334155),
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    item.$2,
-                    style: const TextStyle(
-                      color: Color(0xFF0F172A),
-                      fontSize: 24,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  const Text(
-                    'Системийн бодит өгөгдөл',
-                    style: TextStyle(color: Color(0xFF64748B), fontSize: 12),
-                  ),
-                ],
-              ),
+            return PremiumStatCard(
+              title: item.$1,
+              value: item.$2,
+              icon: item.$3,
+              footer: footer,
             );
           },
         );
@@ -1774,72 +1776,3 @@ class _StatusBadge extends StatelessWidget {
   }
 }
 
-class _EmptyState extends StatelessWidget {
-  const _EmptyState({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: const Color(0xFF94A3B8), size: 24),
-          const SizedBox(height: 8),
-          Text(
-            title,
-            style: const TextStyle(
-              color: Color(0xFF334155),
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Color(0xFF64748B)),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AdminSection extends StatelessWidget {
-  const _AdminSection({required this.title, required this.child});
-
-  final String title;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(28),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
-          child,
-        ],
-      ),
-    );
-  }
-}
