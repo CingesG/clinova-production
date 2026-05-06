@@ -4,7 +4,8 @@ enum LogoVariant { light, dark, glass }
 
 /// Reusable Clinova logo with responsive scaling and UI-friendly variants.
 ///
-/// Mark assets: [LogoVariant.dark] uses `assets/branding/clinova_logo.png` (canonical brand).
+/// Mark assets: [LogoVariant.dark] uses `assets/branding/clinova_logo_ui.png` (lightweight UI
+/// mark). Full-res `clinova_logo.png` remains for launcher icon generation only.
 /// Light-on-dark heroes use `assets/images/clinova_logo_white.png`.
 class ClinovaLogo extends StatelessWidget {
   const ClinovaLogo({
@@ -119,7 +120,7 @@ class ClinovaLogo extends StatelessWidget {
   String _assetForVariant(LogoVariant variant) => switch (variant) {
         LogoVariant.light => 'assets/images/clinova_logo_white.png',
         LogoVariant.glass => 'assets/images/clinova_logo_white.png',
-        LogoVariant.dark => 'assets/branding/clinova_logo.png',
+        LogoVariant.dark => 'assets/branding/clinova_logo_ui.png',
       };
 }
 
@@ -136,12 +137,17 @@ class _LogoMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final decode = (size * dpr).ceil().clamp(48, 256);
     return SizedBox(
       width: size,
       height: size,
       child: Image.asset(
         assetPath,
         fit: BoxFit.contain,
+        cacheWidth: decode,
+        cacheHeight: decode,
+        gaplessPlayback: true,
         errorBuilder: (context, error, stackTrace) => Container(
           decoration: BoxDecoration(
             color: fallbackColor.withValues(alpha: 0.12),

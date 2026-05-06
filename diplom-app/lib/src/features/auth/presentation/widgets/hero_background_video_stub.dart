@@ -73,6 +73,9 @@ class _HeroBackgroundVideoState extends State<HeroBackgroundVideo> {
     return Image.asset(
       widget.posterPath,
       fit: BoxFit.cover,
+      cacheWidth: 1200,
+      cacheHeight: 675,
+      gaplessPlayback: true,
       errorBuilder: (_, error, stackTrace) =>
           const ColoredBox(color: Color(0xFF0B5FA8)),
     );

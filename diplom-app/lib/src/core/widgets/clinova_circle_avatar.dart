@@ -1,6 +1,9 @@
 import 'dart:typed_data';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+
+import '../media/clinova_avatar_url.dart';
 
 /// Circle avatar with safe network/memory image loading; falls back to [initialsText]
 /// on load error, invalid URL, or missing image (avoids [NetworkImage] throwing on web).
@@ -29,14 +32,25 @@ class ClinovaCircleAvatar extends StatelessWidget {
         (u.isScheme('http') || u.isScheme('https'));
   }
 
+  int _decodeExtent(BuildContext context, double logicalSide, int maxPx) {
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    return (logicalSide * dpr).ceil().clamp(1, maxPx);
+  }
+
   @override
   Widget build(BuildContext context) {
     final d = radius * 2;
     final mem = memoryBytes;
     final hasMem = mem != null && mem.isNotEmpty;
     final trimmed = networkUrl?.trim();
+    final bundledPath = !hasMem &&
+            trimmed != null &&
+            trimmed.isNotEmpty
+        ? clinovaBundledAvatarAssetPath(trimmed)
+        : null;
     String? netUrl;
     if (!hasMem &&
+        bundledPath == null &&
         trimmed != null &&
         trimmed.isNotEmpty &&
         _isLoadableHttpUrl(trimmed)) {
@@ -65,17 +79,37 @@ class ClinovaCircleAvatar extends StatelessWidget {
         height: d,
         errorBuilder: (_, _, _) => fallback(),
       );
-    } else if (netUrl != null) {
-      inner = Image.network(
-        netUrl,
+    } else if (bundledPath != null) {
+      final px = _decodeExtent(context, d, 480);
+      inner = Image.asset(
+        bundledPath,
         fit: BoxFit.cover,
         width: d,
         height: d,
+        cacheWidth: px,
+        cacheHeight: px,
+        gaplessPlayback: true,
         errorBuilder: (_, _, _) => fallback(),
-        loadingBuilder: (context, child, progress) {
-          if (progress == null) return child;
+        frameBuilder: (context, child, frame, wasSync) {
+          if (wasSync || frame != null) {
+            return child;
+          }
           return fallback();
         },
+      );
+    } else if (netUrl != null) {
+      final px = _decodeExtent(context, d, 512);
+      inner = CachedNetworkImage(
+        imageUrl: netUrl,
+        fit: BoxFit.cover,
+        width: d,
+        height: d,
+        memCacheWidth: px,
+        memCacheHeight: px,
+        fadeInDuration: const Duration(milliseconds: 200),
+        fadeOutDuration: Duration.zero,
+        placeholder: (context, url) => fallback(),
+        errorWidget: (context, url, error) => fallback(),
       );
     } else {
       inner = fallback();

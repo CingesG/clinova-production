@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -22,6 +23,7 @@ import '../../../core/network/doctor_chat_dm_room.dart';
 import '../../../core/network/pending_inbound_call_provider.dart';
 import '../../../core/network/realtime_service.dart';
 import '../../../core/widgets/clinova_backdrop.dart';
+import '../../../core/widgets/clinova_circle_avatar.dart';
 import '../../auth/application/auth_controller.dart';
 import '../services/chat_attachment_download.dart';
 import '../services/clinova_rtc_call_session.dart';
@@ -846,17 +848,45 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                 minScale: 0.25,
                 maxScale: 5,
                 child: Center(
-                  child: Image.network(
-                    resolved,
-                    fit: BoxFit.contain,
-                      errorBuilder: (context, error, stackTrace) => const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text(
-                        'Зураг ачааллах боломжгүй',
-                        style: TextStyle(color: Colors.white70),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
+                  child: LayoutBuilder(
+                    builder: (context, c) {
+                      final dpr = MediaQuery.devicePixelRatioOf(context);
+                      final mw =
+                          (c.biggest.shortestSide * dpr * 2).round().clamp(
+                                480,
+                                2200,
+                              );
+                      return CachedNetworkImage(
+                        imageUrl: resolved,
+                        fit: BoxFit.contain,
+                        memCacheWidth: mw,
+                        fadeInDuration: const Duration(milliseconds: 220),
+                        fadeOutDuration: Duration.zero,
+                        placeholder: (context, url) => const Padding(
+                          padding: EdgeInsets.all(48),
+                          child: SizedBox(
+                            width: 40,
+                            height: 40,
+                            child: Opacity(
+                              opacity: 0.9,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: Colors.white54,
+                              ),
+                            ),
+                          ),
+                        ),
+                        errorWidget: (context, error, stackTrace) =>
+                            const Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Text(
+                            'Зураг ачааллах боломжгүй',
+                            style: TextStyle(color: Colors.white70),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
               ),
@@ -1051,21 +1081,43 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                   onTap: () => _showImageLightbox(context, attachmentUrl),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(12),
-                    child: Image.network(
-                      attachmentUrl,
-                      width: 220,
-                      height: 140,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, error, stackTrace) => Container(
-                        width: 220,
-                        height: 140,
-                        color: Colors.black12,
-                        alignment: Alignment.center,
-                        child: Text(
-                          'Image unavailable',
-                          style: TextStyle(color: textColor),
-                        ),
-                      ),
+                    child: Builder(
+                      builder: (context) {
+                        final dpr = MediaQuery.devicePixelRatioOf(context);
+                        final mw = (220 * dpr).round().clamp(160, 900);
+                        final mh = (140 * dpr).round().clamp(100, 600);
+                        return CachedNetworkImage(
+                          imageUrl: attachmentUrl,
+                          width: 220,
+                          height: 140,
+                          fit: BoxFit.cover,
+                          memCacheWidth: mw,
+                          memCacheHeight: mh,
+                          fadeInDuration: const Duration(milliseconds: 200),
+                          fadeOutDuration: Duration.zero,
+                          placeholder: (context, url) => Container(
+                            width: 220,
+                            height: 140,
+                            color: Colors.black12,
+                            alignment: Alignment.center,
+                            child: const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                          errorWidget: (context, url, error) => Container(
+                            width: 220,
+                            height: 140,
+                            color: Colors.black12,
+                            alignment: Alignment.center,
+                            child: Text(
+                              'Image unavailable',
+                              style: TextStyle(color: textColor),
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   ),
                 ),
@@ -1800,20 +1852,24 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
         ),
         title: Row(
           children: [
-            CircleAvatar(
-              radius: 16,
-              backgroundColor: const Color(0xFFEAF2FF),
-              backgroundImage: selectedDoctor != null
-                  ? (() {
-                      final url = _doctorAvatarUrl(selectedDoctor!);
-                      return url == null ? null : NetworkImage(url);
-                    })()
-                  : null,
-              child:
-                  selectedDoctor == null ||
-                      _doctorAvatarUrl(selectedDoctor!) == null
-                  ? const Icon(Icons.person, size: 16, color: Color(0xFF1D4ED8))
-                  : null,
+            Builder(
+              builder: (context) {
+                final name = selectedDoctor != null
+                    ? _doctorDisplayName(selectedDoctor!)
+                    : '';
+                final initial = name.isNotEmpty
+                    ? String.fromCharCode(name.runes.first).toUpperCase()
+                    : '?';
+                return ClinovaCircleAvatar(
+                  radius: 16,
+                  initialsText: initial,
+                  backgroundColor: const Color(0xFFEAF2FF),
+                  foregroundColor: const Color(0xFF1D4ED8),
+                  networkUrl: selectedDoctor != null
+                      ? _doctorAvatarUrl(selectedDoctor!)
+                      : null,
+                );
+              },
             ),
             const SizedBox(width: 10),
             Expanded(

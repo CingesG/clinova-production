@@ -819,6 +819,9 @@ class _HeroVideoCard extends StatelessWidget {
                       Image.asset(
                         'assets/images/clinova_hero_poster.jpg',
                         fit: BoxFit.cover,
+                        cacheWidth: 1200,
+                        cacheHeight: 675,
+                        gaplessPlayback: true,
                         errorBuilder: (context, error, stackTrace) => Container(
                           color: const Color(0xFF0F4C81),
                           alignment: Alignment.center,

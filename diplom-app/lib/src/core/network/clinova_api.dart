@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../config/app_config.dart';
+import '../media/clinova_avatar_url.dart';
 import 'api_client.dart';
 
 final clinovaApiProvider = Provider<ClinovaApi>((ref) {
@@ -717,15 +717,5 @@ class ClinovaApi {
     return out;
   }
 
-  String? _absolutizeUrl(String? raw) {
-    final value = raw?.trim();
-    if (value == null || value.isEmpty) return null;
-    if (value.startsWith('http://') || value.startsWith('https://')) {
-      return value;
-    }
-    final base = Uri.tryParse(AppConfig.apiBaseUrl);
-    if (base == null) return value;
-    final fixedPath = value.startsWith('/') ? value : '/$value';
-    return base.resolve(fixedPath).toString();
-  }
+  String? _absolutizeUrl(String? raw) => clinovaAbsolutizeMediaUrl(raw);
 }

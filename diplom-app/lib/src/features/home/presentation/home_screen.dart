@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/localization/context_l10n.dart';
-import '../../../core/config/app_config.dart';
+import '../../../core/media/clinova_avatar_url.dart';
 import '../../../core/network/clinova_api.dart';
 import '../../../core/widgets/clinova_backdrop.dart';
 import '../../../core/widgets/clinova_circle_avatar.dart';
@@ -39,15 +39,7 @@ String _appointmentDoctorName(Map<String, dynamic> ap) {
   return _userFullName(u);
 }
 
-String? _absoluteUrl(String? raw) {
-  final value = raw?.trim();
-  if (value == null || value.isEmpty) return null;
-  if (value.startsWith('http://') || value.startsWith('https://')) return value;
-  final base = Uri.tryParse(AppConfig.apiBaseUrl);
-  if (base == null) return value;
-  final fixedPath = value.startsWith('/') ? value : '/$value';
-  return base.resolve(fixedPath).toString();
-}
+String? _absoluteUrl(String? raw) => clinovaAbsolutizeMediaUrl(raw);
 
 void _goAppointments(BuildContext context, Map<String, String?> queryMap) {
   final q = <String, String>{};
@@ -72,6 +64,34 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final GlobalKey _doctorsSectionKey = GlobalKey();
+
+  Future<List<dynamic>>? _homeBootstrapFuture;
+  String? _homeBootstrapDay;
+  bool? _homeBootstrapAuthed;
+
+  Future<List<dynamic>> _ensureHomeBootstrap({
+    required String today,
+    required bool isAuthed,
+  }) {
+    if (_homeBootstrapFuture != null &&
+        _homeBootstrapDay == today &&
+        _homeBootstrapAuthed == isAuthed) {
+      return _homeBootstrapFuture!;
+    }
+    _homeBootstrapDay = today;
+    _homeBootstrapAuthed = isAuthed;
+    final api = ref.read(clinovaApiProvider);
+    _homeBootstrapFuture = Future.wait<dynamic>([
+      isAuthed
+          ? api.getPatientDashboard()
+          : Future<Map<String, dynamic>>.value(const <String, dynamic>{}),
+      api.getAvailableSlots(date: today),
+      api.getDepartments(),
+      api.getBranches(),
+      api.getDoctors(),
+    ]);
+    return _homeBootstrapFuture!;
+  }
 
   void _scrollToDoctors() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -133,15 +153,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             children: [
               Positioned.fill(
                 child: FutureBuilder<List<dynamic>>(
-                  future: Future.wait<dynamic>([
-                    isAuthed
-                        ? ref.read(clinovaApiProvider).getPatientDashboard()
-                        : Future<Map<String, dynamic>>.value(const {}),
-                    ref.read(clinovaApiProvider).getAvailableSlots(date: today),
-                    ref.read(clinovaApiProvider).getDepartments(),
-                    ref.read(clinovaApiProvider).getBranches(),
-                    ref.read(clinovaApiProvider).getDoctors(),
-                  ]),
+                  future: _ensureHomeBootstrap(
+                    today: today,
+                    isAuthed: isAuthed,
+                  ),
                   builder: (context, snapshot) {
                     final dashboard =
                         snapshot.hasData && snapshot.data!.isNotEmpty
@@ -299,17 +314,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                       ),
                                     if (isAuthed && user?.role == 'PATIENT')
                                       const SizedBox(height: 20),
-                                    _StaffPreviewSection(
-                                      key: _doctorsSectionKey,
-                                      l10n: l10n,
-                                      theme: theme,
-                                      doctors: doctorsList,
+                                    RepaintBoundary(
+                                      child: _StaffPreviewSection(
+                                        key: _doctorsSectionKey,
+                                        l10n: l10n,
+                                        theme: theme,
+                                        doctors: doctorsList,
+                                      ),
                                     ),
                                     const SizedBox(height: 20),
-                                    _BranchesPreviewSection(
-                                      l10n: l10n,
-                                      theme: theme,
-                                      branches: branchesList,
+                                    RepaintBoundary(
+                                      child: _BranchesPreviewSection(
+                                        l10n: l10n,
+                                        theme: theme,
+                                        branches: branchesList,
+                                      ),
                                     ),
                                     const SizedBox(height: 26),
                                     _SectionHeader(
@@ -709,14 +728,18 @@ class _StaffPreviewSection extends StatelessWidget {
             ],
           ),
           clipBehavior: Clip.antiAlias,
-          child: Stack(
-            children: [
+          child: RepaintBoundary(
+            child: Stack(
+              children: [
               AspectRatio(
                 aspectRatio: 16 / 9,
                 child: Image.asset(
-                  'assets/images/clinova_team.png',
+                  'assets/images/clinova_team_card.jpg',
                   fit: BoxFit.cover,
                   alignment: Alignment.topCenter,
+                  cacheWidth: 1000,
+                  cacheHeight: 562,
+                  gaplessPlayback: true,
                   errorBuilder: (context, error, stackTrace) => Container(
                     color: const Color(0xFF0D3B66),
                     alignment: Alignment.center,
@@ -750,6 +773,7 @@ class _StaffPreviewSection extends StatelessWidget {
                 ),
               ),
             ],
+            ),
           ),
         ),
         const SizedBox(height: 14),
