@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/localization/context_l10n.dart';
+import '../../../core/navigation/go_router_pop.dart';
 import '../../../core/widgets/clinova_backdrop.dart';
 import '../../../core/widgets/clinova_logo.dart';
 import '../../auth/application/auth_controller.dart';
@@ -29,7 +30,7 @@ class AppointmentBookingLandingScreen extends ConsumerWidget {
                 Row(
                   children: [
                     IconButton.filledTonal(
-                      onPressed: () => context.pop(),
+                      onPressed: () => popOrGo(context, '/home'),
                       icon: const Icon(Icons.arrow_back_rounded),
                     ),
                     const SizedBox(width: 8),
@@ -132,13 +133,8 @@ class AppointmentBookingLandingScreen extends ConsumerWidget {
                 ],
                 const SizedBox(height: 12),
                 TextButton(
-                  onPressed: () {
-                    if (auth.isAuthenticated) {
-                      context.push('/appointments/book');
-                    } else {
-                      context.push('/auth/login');
-                    }
-                  },
+                  onPressed: () =>
+                      context.push('/branches'),
                   child: Text(l10n.aptLandingViewDoctors),
                 ),
               ],

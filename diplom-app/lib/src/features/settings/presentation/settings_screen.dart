@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/localization/context_l10n.dart';
+import '../../../core/navigation/go_router_pop.dart';
 import '../../../core/widgets/clinova_backdrop.dart';
 import '../../../core/widgets/premium_healthcare_shell.dart';
 import '../../auth/application/auth_controller.dart';
@@ -53,14 +54,8 @@ class SettingsScreen extends ConsumerWidget {
         iconTheme: const IconThemeData(color: ClinovaPremium.textPrimary),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: () {
-            final router = GoRouter.of(context);
-            if (router.canPop()) {
-              router.pop();
-              return;
-            }
-            router.go(_fallbackHome(user?.role));
-          },
+          onPressed: () =>
+              popOrGo(context, _fallbackHome(user?.role)),
         ),
       ),
       body: ClinovaBackdrop(

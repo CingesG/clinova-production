@@ -110,6 +110,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     if (location.startsWith('/auth')) return true;
     if (location == '/appointments-landing') return true;
     if (location == '/chat-landing') return true;
+    if (location == '/branches') return true;
     if (location == '/agent') return true;
     return false;
   }

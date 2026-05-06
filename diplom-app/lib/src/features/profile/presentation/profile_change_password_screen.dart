@@ -80,7 +80,7 @@ class _ProfileChangePasswordScreenState
       messenger.showSnackBar(
         SnackBar(content: Text(l10n.profileChangePasswordSuccessSnack)),
       );
-      context.pop();
+      popOrGo(context, '/profile');
     } on DioException catch (e) {
       if (!mounted) return;
       final msg = _serverMessage(e) ?? l10n.profileChangePasswordGenericError;

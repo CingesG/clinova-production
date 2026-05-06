@@ -105,7 +105,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
       await ref.read(authControllerProvider.notifier).reloadCurrentUser();
       if (!mounted) return;
       messenger.showSnackBar(SnackBar(content: Text(l10n.profileEditSavedSnack)));
-      context.pop();
+      popOrGo(context, '/profile');
     } on DioException {
       if (!mounted) return;
       messenger.showSnackBar(SnackBar(content: Text(l10n.profileEditErrorSnack)));
