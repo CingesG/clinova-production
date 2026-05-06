@@ -30,7 +30,13 @@ class DoctorChatLandingScreen extends ConsumerWidget {
                 Row(
                   children: [
                     IconButton.filledTonal(
-                      onPressed: () => popOrGo(context, '/home'),
+                      onPressed: () => popOrGo(
+                        context,
+                        clinovaNavigationFallback(
+                          isAuthenticated: auth.isAuthenticated,
+                          role: auth.user?.role,
+                        ),
+                      ),
                       icon: const Icon(Icons.arrow_back_rounded),
                     ),
                     const SizedBox(width: 8),

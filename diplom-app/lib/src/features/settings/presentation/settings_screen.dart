@@ -13,18 +13,6 @@ import 'language_controller.dart';
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
-  static String _fallbackHome(String? role) {
-    switch (role) {
-      case 'ADMIN':
-      case 'STAFF':
-        return '/admin';
-      case 'DOCTOR':
-        return '/doctor';
-      default:
-        return '/home';
-    }
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
@@ -55,7 +43,7 @@ class SettingsScreen extends ConsumerWidget {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded),
           onPressed: () =>
-              popOrGo(context, _fallbackHome(user?.role)),
+              popOrGo(context, clinovaAuthenticatedHome(user?.role)),
         ),
       ),
       body: ClinovaBackdrop(

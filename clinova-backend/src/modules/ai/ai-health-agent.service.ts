@@ -35,7 +35,19 @@ export interface ClinovaAgentAction {
   payload: Record<string, unknown>;
 }
 
+export type ClinovaAgentIntent =
+  | 'symptom_check'
+  | 'image_analysis'
+  | 'appointment_help'
+  | 'doctor_recommendation'
+  | 'service_info'
+  | 'emergency'
+  | 'app_help'
+  | 'general';
+
 export interface ClinovaAgentResponse {
+  /** Primary user-facing text (same as reply; API / grading-friendly name). */
+  answerText: string;
   reply: string;
   suggestions: string[];
   recommendedServices: Array<Record<string, unknown>>;
@@ -44,25 +56,38 @@ export interface ClinovaAgentResponse {
   riskLevel: RiskLevel;
   conversationId?: string;
   actions: ClinovaAgentAction[];
+  /** Alias of actions for structured JSON contract. */
+  suggestedActions: ClinovaAgentAction[];
   safetyDisclaimer: string;
   metadata: Record<string, unknown>;
   answer: string;
   followUpQuestions: string[];
   urgency: 'LOW' | 'MEDIUM' | 'HIGH' | 'EMERGENCY' | 'NONE';
   type: 'GENERAL' | 'TRIAGE' | 'EMERGENCY' | 'BOOKING_HELP';
+  /** Structured intent for clients (UI chips, analytics). */
+  intent: ClinovaAgentIntent;
   recommendedDepartment: string | null;
+  /** e.g. "стоматолог", "дотоодын эмч" — when DB has no named doctor. */
+  recommendedDoctorType: string | null;
+  /** When true, client should show image preliminary disclaimer (Mn). */
+  imageAnalysisDisclaimer: boolean;
 }
 
 /** Богино мэндчилгээ, байгаа эсэх, «юугаар туслах вэ» гэх мэт — LLM дамжуулаад зайлшгүй дуудагдахгүй. */
 type SmalltalkKind = 'GREETING' | 'HELP_MENU' | 'THANKS';
 
 const EMERGENCY_PATTERNS: RegExp[] = [
-  /chest\s*pain|цээж.*өвд|tseej.*ovd/i,
-  /shortness\s*of\s*breath|can't\s*breathe|амьсгал.*давч|amsgal.*davch/i,
-  /severe\s*bleed|hemorrhage|хүчтэй.*цус|tsus.*ih/i,
-  /stroke|face.*droop|slurred\s*speech|инсульт|харвалт/i,
-  /loss\s*of\s*consciousness|unresponsive|ухаан.*алда|uhaan.*alda/i,
-  /anaphylaxis|throat.*swelling|харшил.*хүнд/i,
+  /chest\s*pain|цээж.*өвд|tseej.*(ovd|uwd)|давсагтай\s*цээж/i,
+  /shortness\s*of\s*breath|can't\s*breathe|амьсгал.*давч|амьсгал.*хүнд/i,
+  /severe\s*bleed|hemorrhage|хүчтэй.*цус|цус\s*алда|tsus.*(ih|ald)/i,
+  /stroke|face.*droop|slurred\s*speech|инсульт|судас.*хаагд|хэл.*бүхий/i,
+  /loss\s*of\s*consciousness|unresponsive|faint(ing)?|ухаан.*алда|балар|uhaan.*alda/i,
+  /anaphylaxis|throat.*swelling|харшил.*амь|хоолой.*хөндүүр/i,
+  /pregnancy.*bleed|eclampsia|жирэмсэн.*цус|жирэмсэн.*хорхой|хөөрөлт|товлолт/i,
+  /seizure|convulsion|чичиргээ|таталт|гүйцэд\s*гэмтэл/i,
+  /suicid|self[\s-]*harm|амь\s*хорлох|өөрийгөө\s*хорлох|ахин\s*алах\s*санагд/i,
+  /infant|newborn|нярай|жоотой\s*хүүхэд|5\s*сартай|1\s*настай.*(халуур|амьсгал)/i,
+  /baby.*(fever|breath)|(хүүхэд|нярай).*(халуур|хүнд).*(амьсгал|амьсгаа)/i,
 ];
 
 @Injectable()
@@ -71,6 +96,42 @@ export class AiHealthAgentService {
   private readonly client?: OpenAI;
   private readonly safetyDisclaimer =
     'Clinova AI нь зөвхөн мэдээллийн чиглүүлэг өгнө. Эцсийн онош, эмчилгээ, эмийн тунг зөвхөн эмч шийднэ.';
+
+  private resolveOpenAiModel(forVision: boolean): string {
+    const visionModel = this.config.get<string>('OPENAI_VISION_MODEL')?.trim();
+    const primary = this.config.get<string>('OPENAI_MODEL')?.trim();
+    if (forVision) {
+      if (visionModel) return visionModel;
+      if (primary) return primary;
+      return 'gpt-4o-mini';
+    }
+    if (primary) return primary;
+    return 'gpt-4o-mini';
+  }
+
+  /** Add Mongolian + clinical hints so Prisma search finds dental / gastro / OB-GYN rows. */
+  private expandSymptomSearchForClinova(symptoms: string): string {
+    const t = `${symptoms} ${this.toSearchableText(symptoms)}`.toLowerCase();
+    const bits: string[] = [symptoms];
+    if (/шүд|шүдэн|cuspid|dental|стоматолог/i.test(t)) bits.push('шүд стоматолог dental');
+    if (/гэдэс|хэвлий|stomach|gastro|gist|ойгуулал|acid|reflux/i.test(t))
+      bits.push('гэдэс дотоод эмч gastro');
+    if (/жирэмсэн|төрөх|хүүхэд\s*төрүүлэх|эмэгтэйчүүд|obgyn|хагас\s*эх/i.test(t))
+      bits.push('жирэмсэн эмэгтэйчүүд төрөх');
+    if (/хүүхэд|child|pediat|педиатр/i.test(t)) bits.push('хүүхэд педиатр');
+    if (/цээж|зүрх|cardio|давхар судас/i.test(t)) bits.push('зүрх судас');
+    if (/амьсгал|уртавч|pulmo|үндсэн/i.test(t)) bits.push('амьсгалын эмч');
+    return [...new Set(bits)].join(' ');
+  }
+
+  private inferRecommendedDoctorTypeFromUserText(text: string): string | null {
+    const t = this.toSearchableText(text);
+    if (/шүд|dental|стоматолог/i.test(t)) return 'Стоматолог (шүдний эмч)';
+    if (/гэдэс|gastro|хэвлий|stomach/i.test(t)) return 'Дотоодын эмч / гастроэнтеролог';
+    if (/жирэмсэн|төрөх|obgyn|эмэгтэйчүүд/i.test(t)) return 'Эмэгтэйчүүдийн эмч / акушер-гинеколог';
+    if (/хүүхэд|pediat/i.test(t)) return 'Хүүхдийн эмч';
+    return null;
+  }
 
   constructor(
     private readonly config: ConfigService,
@@ -131,6 +192,7 @@ export class AiHealthAgentService {
       out = this.fallback(
         'AI түр хугацаанд хязгаарлагдмал байна. Шинж тэмдгээ дэлгэрэнгүй бичвэл үйлчилгээ, эмч, боломжтой цаг санал болгоно.',
         conversationId,
+        userId,
       );
     } else {
       const history = await this.loadRecentHistory(conversationId, ctx?.history);
@@ -192,11 +254,15 @@ export class AiHealthAgentService {
     return {
       urgency: base.urgency,
       summary: base.reply,
+      answerText: base.answerText,
+      intent: base.intent,
       nextSteps: base.suggestions,
       recommendedDepartment: base.recommendedDepartment,
+      recommendedDoctorType: base.recommendedDoctorType,
       suggestedDoctors: base.recommendedDoctors,
       availableSlots: base.availableSlots,
       actions: base.actions,
+      suggestedActions: base.suggestedActions,
     };
   }
 
@@ -208,7 +274,8 @@ export class AiHealthAgentService {
     conversationId?: string,
     visionImages?: AgentImageInput[],
   ): Promise<ClinovaAgentResponse> {
-    const model = this.config.get<string>('OPENAI_MODEL') ?? 'gpt-5.4';
+    const hasVision = Boolean(visionImages?.length);
+    const model = this.resolveOpenAiModel(hasVision);
     const historyText = history
       .slice(-20)
       .map((h) => `${h.role}: ${h.content}`)
@@ -250,10 +317,15 @@ export class AiHealthAgentService {
         });
       }
 
-      return this.normalize(this.safeJson(this.extractText(r)), conversationId);
+      return this.normalize(this.parseAgentJsonPayload(this.extractText(r)), conversationId, {
+        hadVision: hasVision,
+        userId,
+        model,
+        userMessage: text,
+      });
     } catch (e) {
-      this.logger.warn(`Responses API failed: ${e}`);
-      return this.localFallbackFromTools(text, userId, conversationId, e);
+      this.logger.warn(`Responses API failed (model=${model}): ${this.extractShortError(e)}`);
+      return this.localFallbackFromTools(text, userId, conversationId, e, hasVision);
     }
   }
 
@@ -380,8 +452,10 @@ export class AiHealthAgentService {
     userId?: string,
     conversationId?: string,
     error?: unknown,
+    hadVision?: boolean,
   ): Promise<ClinovaAgentResponse> {
-    const serviceResult = await this.searchServicesBySymptoms(text);
+    const widerText = hadVision ? `${text} зураг хавсаргасан` : text;
+    const serviceResult = await this.searchServicesBySymptoms(widerText);
     const services = this.toObjects(serviceResult?.items);
     const firstServiceId = services[0]?.['id']?.toString();
 
@@ -406,9 +480,20 @@ export class AiHealthAgentService {
       doctors.length > 0 ? 'Санал болгосон эмчтэй чатлах' : 'Эмчтэй чатлах',
       slots.length > 0 ? 'Өнөөдрийн боломжтой цаг харах' : 'Боломжтой цаг шалгах',
     ];
-    const reply = this.buildLocalReply(services, doctors, slots, riskLevel);
+    const reply =
+      (hadVision ? 'Зургийг автоматаар дэлгэрэнгүй шинжлэх боломжгүй байна. ' : '') +
+      this.buildLocalReply(services, doctors, slots, riskLevel) +
+      (hadVision
+        ? ' Илүү тод зураг (гэрэл сайн, ойрын) эсвэл шинж тэмдгийг бичвел илүү нарийвчилна.'
+        : '');
+
+    const docType =
+      (services[0]?.['departmentName']?.toString() ?? null) ||
+      this.inferRecommendedDoctorTypeFromUserText(text);
+    const acts = this.actions(riskLevel, services, doctors, userId);
 
     return {
+      answerText: reply,
       reply,
       suggestions,
       recommendedServices: services,
@@ -416,13 +501,15 @@ export class AiHealthAgentService {
       availableSlots: slots,
       riskLevel,
       conversationId,
-      actions: this.actions(riskLevel, services, doctors),
+      actions: acts,
+      suggestedActions: acts,
       safetyDisclaimer: this.safetyDisclaimer,
       metadata: {
         source: 'local-fallback',
         reason: this.extractShortError(error),
-        openAiModel: this.config.get<string>('OPENAI_MODEL') ?? 'gpt-5.4',
+        openAiModel: this.config.get<string>('OPENAI_MODEL') ?? 'gpt-4o-mini',
         hasUserId: Boolean(userId),
+        hadVision: Boolean(hadVision),
       },
       answer: reply,
       followUpQuestions: suggestions,
@@ -435,7 +522,19 @@ export class AiHealthAgentService {
               ? 'EMERGENCY'
               : 'MEDIUM',
       type: services.length > 0 ? 'TRIAGE' : 'GENERAL',
+      intent:
+        riskLevel === 'emergency'
+          ? 'emergency'
+          : doctors.length > 0
+            ? 'doctor_recommendation'
+            : services.length > 0
+              ? 'service_info'
+              : hadVision
+                ? 'image_analysis'
+                : 'symptom_check',
       recommendedDepartment: services[0]?.['departmentName']?.toString() ?? null,
+      recommendedDoctorType: doctors.length > 0 ? null : docType,
+      imageAnalysisDisclaimer: Boolean(hadVision) && riskLevel !== 'emergency',
     };
   }
 
@@ -567,7 +666,8 @@ export class AiHealthAgentService {
   }
 
   private async searchServicesBySymptoms(symptoms: string, branchId?: string) {
-    const keys = this.toSearchableText(symptoms).split(/\s+/).filter((x) => x.length >= 3).slice(0, 6);
+    const expanded = this.expandSymptomSearchForClinova(symptoms);
+    const keys = this.toSearchableText(expanded).split(/\s+/).filter((x) => x.length >= 2).slice(0, 12);
     let items = await this.prisma.service.findMany({
       where: {
         status: 'ACTIVE',
@@ -739,17 +839,145 @@ export class AiHealthAgentService {
     };
   }
 
-  private normalize(raw: Record<string, unknown>, conversationId?: string): ClinovaAgentResponse {
-    const risk = this.normalizeRisk(raw.riskLevel);
+  private normalizeAgentIntent(
+    raw: unknown,
+    risk: RiskLevel,
+    svcCount: number,
+    docCount: number,
+    hadVision?: boolean,
+  ): ClinovaAgentIntent {
+    const allowed: ClinovaAgentIntent[] = [
+      'symptom_check',
+      'image_analysis',
+      'appointment_help',
+      'doctor_recommendation',
+      'service_info',
+      'emergency',
+      'app_help',
+      'general',
+    ];
+    const s = String(raw ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/-/g, '_');
+    if (allowed.includes(s as ClinovaAgentIntent)) return s as ClinovaAgentIntent;
+    if (risk === 'emergency') return 'emergency';
+    if (hadVision && (s === '' || s === 'general')) return 'image_analysis';
+    if (docCount > 0) return 'doctor_recommendation';
+    if (svcCount > 0) return 'service_info';
+    return 'general';
+  }
+
+  private normalizeLlmActionRoute(type: string, route: string): string | null {
+    const t = type.trim().toUpperCase();
+    let r = route.trim();
+    if (r === '/doctors' || r.toLowerCase() === 'doctors' || r.toLowerCase() === '/doctors') {
+      r = '/branches';
+    }
+    if (r.startsWith('emergency:')) return r;
+    if (r.startsWith('/')) return r;
+    if (t === 'BOOK_APPOINTMENT' || t === 'BOOKING') return '/appointments/book';
+    if (t === 'APPOINTMENT_LANDING' || t === 'SHOW_AVAILABLE_TIMES') return '/appointments-landing';
+    if (
+      t === 'SHOW_DOCTORS' ||
+      t === 'VIEW_BRANCHES' ||
+      t === 'VIEW_DOCTORS' ||
+      r.toLowerCase() === 'branches'
+    ) {
+      return '/branches';
+    }
+    if (t === 'OPEN_CHAT' || t === 'OPEN_PATIENT_CHAT' || r.toLowerCase() === 'chat') return '/chat-landing';
+    if (t === 'OPEN_EMERGENCY_PAGE' || r.toLowerCase() === 'emergency') return '/emergency';
+    if (t === 'VIEW_MY_APPOINTMENTS' || t === 'MY_APPOINTMENTS') return '/appointments';
+    if (r.length > 0 && r.startsWith('appointments')) return `/${r.replace(/^\/+/, '')}`;
+    return null;
+  }
+
+  private normalizeSuggestedActionsFromLlm(items: Array<Record<string, unknown>>): ClinovaAgentAction[] {
+    const out: ClinovaAgentAction[] = [];
+    for (const it of items.slice(0, 5)) {
+      const label = String(it.label ?? '').trim();
+      if (!label) continue;
+      const type = String(it.type ?? 'CUSTOM').trim() || 'CUSTOM';
+      const rawRoute = String(it.route ?? '').trim();
+      const route = this.normalizeLlmActionRoute(type, rawRoute);
+      if (!route) continue;
+      const params =
+        it.params != null && typeof it.params === 'object' && !Array.isArray(it.params)
+          ? (it.params as Record<string, unknown>)
+          : {};
+      out.push({
+        type,
+        label,
+        route,
+        params,
+        payload: { route, params },
+      });
+    }
+    return out;
+  }
+
+  private mergeAgentActions(first: ClinovaAgentAction[], second: ClinovaAgentAction[]): ClinovaAgentAction[] {
+    const seen = new Set<string>();
+    const merged: ClinovaAgentAction[] = [];
+    for (const x of [...first, ...second]) {
+      const k = `${x.label}::${x.route ?? ''}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      merged.push(x);
+      if (merged.length >= 8) break;
+    }
+    return merged;
+  }
+
+  private normalize(
+    raw: Record<string, unknown>,
+    conversationId?: string,
+    opts?: { hadVision?: boolean; userId?: string; model?: string; userMessage?: string },
+  ): ClinovaAgentResponse {
+    const risk = this.normalizeRisk(raw.urgency ?? raw.riskLevel);
     const reply =
-      String(raw.reply ?? raw.answer ?? '').trim() ||
-      'Би энд байна л даа 😊 Өвчин, цаг захиалга асуудаг бөгөөд дахин нэгээсээ бичээд үлдээрэй.';
-    const suggestions = this.toStrings(raw.suggestions ?? raw.followUpQuestions);
+      String(raw.answerText ?? raw.reply ?? raw.answer ?? '').trim() ||
+      'Би Clinova AI — шинж тэмдэг, зурагийн урьдчилсан үнэлгээ, цаг захиалга, эмч, аппын талаар тусална. Юу асуух вэ?';
+    const followUpQuestions = this.toStrings(raw.followUpQuestions).slice(0, 3);
+    const sugOnly = this.toStrings(raw.suggestions).slice(0, 5);
+    const suggestions = [...new Set([...followUpQuestions, ...sugOnly])].slice(0, 6);
     const recommendedServices = this.toObjects(raw.recommendedServices);
     const recommendedDoctors = this.toObjects(raw.recommendedDoctors);
     const availableSlots = this.toObjects(raw.availableSlots);
-    const actions = this.actions(risk, recommendedServices, recommendedDoctors);
+    const deptRaw = raw.recommendedDepartment != null ? String(raw.recommendedDepartment).trim() : '';
+    const recommendedDepartment =
+      deptRaw.length > 0 && deptRaw !== 'null' && deptRaw !== '—'
+        ? deptRaw
+        : (recommendedServices[0]?.['departmentName']?.toString() ?? null);
+    const docTypeRaw = raw.recommendedDoctorType != null ? String(raw.recommendedDoctorType).trim() : '';
+    const recommendedDoctorTypeFromRaw =
+      docTypeRaw.length > 0 && docTypeRaw !== 'null' && docTypeRaw !== '—' ? docTypeRaw : null;
+    const recommendedDoctorType =
+      recommendedDoctorTypeFromRaw ??
+      (recommendedDoctors.length > 0
+        ? null
+        : this.inferRecommendedDoctorTypeFromUserText(String(opts?.userMessage ?? '')));
+
+    const intent = this.normalizeAgentIntent(
+      raw.intent,
+      risk,
+      recommendedServices.length,
+      recommendedDoctors.length,
+      opts?.hadVision,
+    );
+
+    const fromLlm = this.normalizeSuggestedActionsFromLlm(this.toObjects(raw.suggestedActions));
+    const serverActs = this.actions(risk, recommendedServices, recommendedDoctors, opts?.userId);
+    const actions = this.mergeAgentActions(fromLlm, serverActs);
+
+    const imageAnalysisDisclaimer =
+      (intent === 'image_analysis' || Boolean(opts?.hadVision)) && intent !== 'emergency';
+
+    const modelTag = opts?.model ?? this.config.get<string>('OPENAI_MODEL') ?? 'gpt-4o-mini';
+
     return {
+      answerText: reply,
       reply,
       suggestions,
       recommendedServices,
@@ -758,13 +986,24 @@ export class AiHealthAgentService {
       riskLevel: risk,
       conversationId,
       actions,
+      suggestedActions: actions,
       safetyDisclaimer: this.safetyDisclaimer,
-      metadata: { model: this.config.get<string>('OPENAI_MODEL') ?? 'gpt-5.4', source: 'responses-api' },
+      metadata: { model: modelTag, source: 'responses-api' },
       answer: reply,
-      followUpQuestions: suggestions,
-      urgency: risk === 'low' ? 'LOW' : risk === 'high' ? 'HIGH' : risk === 'emergency' ? 'EMERGENCY' : 'MEDIUM',
+      followUpQuestions: followUpQuestions.length > 0 ? followUpQuestions : suggestions.slice(0, 3),
+      urgency:
+        risk === 'low'
+          ? 'LOW'
+          : risk === 'high'
+            ? 'HIGH'
+            : risk === 'emergency'
+              ? 'EMERGENCY'
+              : 'MEDIUM',
       type: risk === 'emergency' ? 'EMERGENCY' : recommendedServices.length > 0 ? 'TRIAGE' : 'GENERAL',
-      recommendedDepartment: recommendedServices[0]?.['departmentName']?.toString() ?? null,
+      intent,
+      recommendedDepartment,
+      recommendedDoctorType,
+      imageAnalysisDisclaimer,
     };
   }
 
@@ -772,12 +1011,20 @@ export class AiHealthAgentService {
     risk: RiskLevel,
     services: Array<Record<string, unknown>>,
     doctors: Array<Record<string, unknown>>,
+    userId?: string,
   ): ClinovaAgentAction[] {
     if (risk === 'emergency') {
       return [
         {
+          type: 'OPEN_EMERGENCY_PAGE',
+          label: 'Яаралтай тусламж — заавар',
+          route: '/emergency',
+          params: {},
+          payload: { route: '/emergency', params: {} },
+        },
+        {
           type: 'OPEN_EMERGENCY',
-          label: 'Яаралтай тусламж',
+          label: '103 руу залгах',
           route: 'emergency:tel',
           params: { number: '103' },
           payload: { route: 'emergency:tel', params: { number: '103' } },
@@ -792,10 +1039,52 @@ export class AiHealthAgentService {
     }
     if (doc != null) this.merge(params, { doctorId: doc['id'] });
     return [
-      { type: 'BOOK_APPOINTMENT', label: 'Цаг авах', route: '/appointments/book', params, payload: { route: '/appointments/book', params } },
-      { type: 'OPEN_PATIENT_CHAT', label: 'Эмчтэй чатлах', route: '/doctor-chat', params: {}, payload: { route: '/doctor-chat', params: {} } },
-      { type: 'SHOW_AVAILABLE_TIMES', label: 'Боломжтой цаг', route: '/appointments-landing', params: {}, payload: { route: '/appointments-landing', params: {} } },
-      { type: 'OPEN_EMERGENCY', label: 'Яаралтай тусламж', route: 'emergency:tel', params: { number: '103' }, payload: { route: 'emergency:tel', params: { number: '103' } } },
+      {
+        type: 'BOOK_APPOINTMENT',
+        label: 'Цаг захиалах',
+        route: '/appointments/book',
+        params,
+        payload: { route: '/appointments/book', params },
+      },
+      {
+        type: 'SHOW_DOCTORS',
+        label: 'Эмч харах',
+        route: '/branches',
+        params: {},
+        payload: { route: '/branches', params: {} },
+      },
+      {
+        type: 'OPEN_PATIENT_CHAT',
+        label: 'Эмчтэй чатлах',
+        route: '/chat-landing',
+        params: {},
+        payload: { route: '/chat-landing', params: {} },
+      },
+      ...(userId
+        ? [
+            {
+              type: 'VIEW_MY_APPOINTMENTS',
+              label: 'Миний цагууд',
+              route: '/appointments',
+              params: {},
+              payload: { route: '/appointments', params: {} },
+            } as ClinovaAgentAction,
+          ]
+        : []),
+      {
+        type: 'SHOW_AVAILABLE_TIMES',
+        label: 'Цагийн заавар',
+        route: '/appointments-landing',
+        params: {},
+        payload: { route: '/appointments-landing', params: {} },
+      },
+      {
+        type: 'OPEN_EMERGENCY_PAGE',
+        label: 'Яаралтай тусламж',
+        route: '/emergency',
+        params: {},
+        payload: { route: '/emergency', params: {} },
+      },
     ];
   }
 
@@ -870,7 +1159,9 @@ export class AiHealthAgentService {
         ? ['Цаг авах', 'Эмчтэй чатлах']
         : [...new Set(['Цаг яаж авах вэ?', 'Цаг авах', 'Эмчтэй чатлах', 'Боломжтой цаг'])];
 
+    const acts = this.actions('low', [], [], undefined);
     return {
+      answerText: reply,
       reply,
       suggestions: suggestionsChips,
       recommendedServices: [],
@@ -878,20 +1169,26 @@ export class AiHealthAgentService {
       availableSlots: [],
       riskLevel: 'low',
       conversationId,
-      actions: this.actions('medium', [], []),
+      actions: acts,
+      suggestedActions: acts,
       safetyDisclaimer: this.safetyDisclaimer,
       metadata: { source: 'smalltalk', kind },
       answer: reply,
       followUpQuestions: suggestionsChips.slice(0, 4),
       urgency: 'LOW',
       type: 'GENERAL',
+      intent: kind === 'HELP_MENU' ? 'appointment_help' : 'general',
       recommendedDepartment: null,
+      recommendedDoctorType: null,
+      imageAnalysisDisclaimer: false,
     };
   }
 
-  private fallback(reply: string, conversationId?: string): ClinovaAgentResponse {
+  private fallback(reply: string, conversationId?: string, userId?: string): ClinovaAgentResponse {
     const suggestions = ['Цаг авах', 'Эмчтэй чатлах', 'Боломжтой цаг'];
+    const acts = this.actions('medium', [], [], userId);
     return {
+      answerText: reply,
       reply,
       suggestions,
       recommendedServices: [],
@@ -899,21 +1196,27 @@ export class AiHealthAgentService {
       availableSlots: [],
       riskLevel: 'medium',
       conversationId,
-      actions: this.actions('medium', [], []),
+      actions: acts,
+      suggestedActions: acts,
       safetyDisclaimer: this.safetyDisclaimer,
-      metadata: { source: 'fallback' },
+      metadata: { source: 'fallback', hasOpenAiKey: Boolean(this.client) },
       answer: reply,
       followUpQuestions: suggestions,
       urgency: 'MEDIUM',
       type: 'GENERAL',
+      intent: 'general',
       recommendedDepartment: null,
+      recommendedDoctorType: null,
+      imageAnalysisDisclaimer: false,
     };
   }
 
   private emergency(conversationId?: string): ClinovaAgentResponse {
     const reply =
       'Таны шинж тэмдэг яаралтай тусламж шаардлагатай байж болзошгүй. Шууд 103 руу залгах эсвэл хамгийн ойрын эмнэлэгт яаралтай очно уу.';
+    const acts = this.actions('emergency', [], [], undefined);
     return {
+      answerText: reply,
       reply,
       suggestions: [],
       recommendedServices: [],
@@ -921,14 +1224,18 @@ export class AiHealthAgentService {
       availableSlots: [],
       riskLevel: 'emergency',
       conversationId,
-      actions: this.actions('emergency', [], []),
+      actions: acts,
+      suggestedActions: acts,
       safetyDisclaimer: this.safetyDisclaimer,
       metadata: { source: 'emergency-rule' },
       answer: reply,
       followUpQuestions: [],
       urgency: 'EMERGENCY',
       type: 'EMERGENCY',
+      intent: 'emergency',
       recommendedDepartment: 'Яаралтай тусламж',
+      recommendedDoctorType: null,
+      imageAnalysisDisclaimer: false,
     };
   }
 
@@ -983,7 +1290,7 @@ export class AiHealthAgentService {
         conversationId,
         sender: 'AI',
         content: response.reply,
-        intent: response.type,
+        intent: response.intent,
         riskLevel: response.riskLevel,
         metadata: {
           suggestions: response.suggestions,
@@ -991,6 +1298,10 @@ export class AiHealthAgentService {
           recommendedDoctors: response.recommendedDoctors,
           availableSlots: response.availableSlots,
           actions: response.actions,
+          suggestedActions: response.suggestedActions,
+          answerText: response.answerText,
+          recommendedDoctorType: response.recommendedDoctorType,
+          imageAnalysisDisclaimer: response.imageAnalysisDisclaimer,
         } as object,
       },
     });
@@ -1000,47 +1311,69 @@ export class AiHealthAgentService {
     const visionBlock = hasUploadedImages
       ? `
 
-Vision / images uploaded:
-- Inspect every attached image attentively — describe objectively what is visible relevant to wellbeing (skin, swellings, visible injury, OTC packaging, prescriptions, screenshots of the Clinova app UI, documents, etc.).
-- Never claim definitive diagnosis purely from imagery; caveat lighting, blur, angle, cropping, and confidentiality.
-- If the image implies acute danger, emergency guidance first, then routing to clinician or ER.
+MULTIMODAL (зураг):
+- Дэмжигдсэн төрөл: арьсны тууралт, гэмтэл/вунд, хавдал, эмийн шошго, шинжилгээний дэлгэц, баримт, цагийн screenshot гэх мэт.
+- Эхлээд зургийг объектив тодорхойл (өнгө, хэмжээ, байрлал, гэрэл/хумсалт), дараа нь **УРЬДЧИЛСАН** ажиглалт — ямар нэг зүйлийг эцсийн онош мэт баталгаатай хэлэхгүй. "Энэ нь хэд хэдэн нөхцөлд тохирох байж болно, эмчийн үзлэг шаардлагатай" гэж тайлбарла.
+- Эмийн шошго: ерөнхий анги, заавал эмч/эмийн сан руу дахин баталгаажуулах. **Тун, хэрхэн уухыг бүү өг.**
+- Шинжилгээ/баримт: тоо хэмжээ танихаас зайлсхий, зөвхөн "энэ төрлийн шинжилгээнд эмчийн тайлбар хэрэгтэй" гэж зааж өг.
+- Зураг тод биш бол: гэрэл сайжруулах, ойрдуулах, илүү тод зураг, юу өвдөж байгааг бичихийг 1–2 асуултаар хүс.
+- Зориулалт: intent = "image_analysis", urgency тохируул. Зуртай үед followUpQuestions нь 1–3 байна.
 `
       : '';
 
-    return `You are Clinova AI — an advanced conversational assistant comparable in usefulness to ChatGPT,
-but specialised for Clinova (hospital/clinic app): appointments, doctors, chats, branches, basic health literacy.
+    const lang =
+      languageHint === 'en'
+        ? 'Default to clear English unless the user writes Mongolian — then mirror Mongolian for natural phrasing.'
+        : 'Хэрэглэгч Монголоор бичсэн бол хариултыг **байгалийн**, богино, ойлгомжтой монголоор бич (кирилл эсвэл латин). English асуултад товч, тодорхой англиар хариулж болно.';
 
-YOUR CONVERSATIONAL STANDARD (critical):
-1) Think step-by-step BEFORE answering: infer intent, ambiguity, urgency, emotion; use conversation_history.
-2) Sound like a capable human collaborator: nuanced, coherent, avoids robotic fillers and empty pleasantries.
-3) Prefer clear structure: short preamble if needed → main answer → concrete next step(s). OK to use Markdown-style line breaks INSIDE JSON "reply" only as \\n.
-4) Adapt depth: terse when the question is trivial; deeper when symptoms, distress, uncertainty, or planning are present.
-5) Mirror user's language/register (romanised Mongol vs Cyrillic vs English).
+    return `You are **Clinova AI** — a smart healthcare assistant inside the **Clinova** hospital/clinic platform.
+You help patients understand symptoms (including general health education), analyze uploaded images **preliminarily**, choose departments, find doctors, prepare for visits, book appointments, and use the app. You **do not replace** a licensed clinician.
 
-WHEN USER ASKS "WHAT CAN YOU DO?" OR APP HELP:
-explain features conversationally — not bullet-only FAQ dumps unless lists truly help readability.
+${lang}
 
-TOOLS (critical):
-- Call tools when you lack real IDs or factual data about services/doctors/slots/branches/appointments.
-- After EACH tool batch, summarise what you learned in natural language BEFORE pure JSON payload.
-- Do NOT hallucinate IDs, branches, physician names or slot timestamps — derive from tools or admit uncertainty precisely.
-- If multiple tools clarify the path (e.g. symptoms → searchServicesBySymptoms → searchDoctorsByService → findAvailableSlots),
-call them sequentially as needed instead of dumping generic advice.
+VOICE & STRUCTURE:
+- Товч, итгэлтэй, дулаан хэлбэр — "роботоор" бичихгүй. Эхний мөрөнд гол санаа.
+- Шинж асуухдаа нэг удаад **1–3** нарийн асуулт (хугацаа, хүчтэй байдал, байрлал, өвдөлтийн онцлог).
+- Ямар тасаг/чиглэл санал болгож буйгаа **нэг өгүүлбэрээр тайлбарла** (жишээ: шүдний шинж → стоматологийн чиглэл).
+- Хариултын төгсгөлд дараагийн **нэг шилдэг алхам** (үзлэг, цаг авах, яаралтай тусламж гэх мэт) тодорхой заана.
 
-BOUNDARIES (still critical):
-You are NOT a diagnosing physician — no final diagnoses, prescriptions, dosing. Encourage clinician follow-up proportionally.
-${visionBlock}
-Output STRICT JSON ONLY (no markdown fences outside the JSON shape). The ONLY top-level schema:
+Clinova аппын тусламж (appointment хэрхэн авах, цэс, чат, салбар):
+- intent = "app_help". Товч алхмууд, шаардлагатай бол "Цаг захиалах", "Эмч харах" гэх маршрутыг санал болго.
+
+OFF-TOPIC:
+- Нэг богино мөрөөр хариулаад Clinova/эрүүл мэнд рүү зөөлөн буцаана.
+
+SAFETY:
+- Эцсийн онош, "тад энэ өвчтэй" гэх баталгаа хоригтой — зөвхөн "байж болзошгүй", "эмчид үзүүлэх зөвлөгөө".
+- Эмийн **нэршил, тун, хэрхэн хэрэглэх** — битгий зааж өг; эмч/эмийн сан руу чиглүүл.
+- Зургийн дүгнэлт болон шинжийн үнэлгээ нь **урьдчилсан** — эмчийн үзлэгийг орлодоггүй гэдгийг хариултад тусгах (1 мөрөөр болно).
+- Emergency (цээж өвдөх, амьсгал даврах, инсультын шинж, их цус алдалт, ухаан алдах, хүнд харшил, жирэмсний яаралтай нөхцөл, хүүхдийн хүнд халуурал/амьсгал, өөрийгөө хорлох санаа): urgency = "emergency", товч яаралтай заавар, **103**. Энгийн чатыг үргэлжлүүлэхгүй.
+
+TOOLS (жинхэнэ өгөгдөл):
+- Хэрэглэгчийн зорилгоор **searchServicesBySymptoms**, **searchDoctorsByService**, **findAvailableSlots**, **getBranches**, шаардлагатай **getUserAppointments** дууд. ID болон цагийг зохиохгүй — зөвхөн хариултаас.
+- "Шүд", "гэдэс", "жирэмсэн" гэх мэтээр тасаг тааруулж хайлтын текстэд багтаагаарай.
+
+Output **STRICT JSON ONLY** (no markdown). Schema:
 {
-  "reply": string (primary user-visible message; may contain \\n for paragraphs),
-  "suggestions": string[],
+  "intent": "symptom_check" | "image_analysis" | "appointment_help" | "doctor_recommendation" | "service_info" | "emergency" | "app_help" | "general",
+  "answerText": string (олон жижиг абзац; \\\\n ашиглаж болно),
+  "reply": string (answerText-тэй ижил утга байж болно — хуучин клиентүүдэд),
+  "recommendedDepartment": string | null,
+  "recommendedDoctorType": string | null (жишээ: "Стоматолог" — эмчийн мэдээлэл байхгүй бол),
+  "urgency": "low" | "medium" | "high" | "emergency",
+  "followUpQuestions": string[] (хамгийн ихдээ 3, богино),
+  "suggestions": string[] (chip — followUpQuestions-тай давхцахгүй бол ялгаатай байж болно),
+  "suggestedActions": [
+    { "label": string, "type": string, "route": string, "params": object? }
+  ],
   "recommendedServices": object[],
   "recommendedDoctors": object[],
-  "availableSlots": object[],
-  "riskLevel": "low" | "medium" | "high" | "emergency"
+  "availableSlots": object[]
 }
-
-Current language/style hint from client: ${languageHint}.`;
+riskLevel = urgency (lowercase) утгаар ижил байлгана.
+Маршрутын жишээ: "/appointments/book", "/branches", "/emergency", "/appointments" (миний цаг), "/chat-landing", "/appointments-landing".
+${visionBlock}
+languageHint: ${languageHint}.`;
   }
 
   private extractFunctionCalls(response: any) {
@@ -1070,13 +1403,38 @@ Current language/style hint from client: ${languageHint}.`;
     return '';
   }
 
-  private safeJson(input: unknown): Record<string, unknown> {
+  private tryJsonObject(raw: string): Record<string, unknown> {
     try {
-      if (typeof input !== 'string') return {};
-      return JSON.parse(input) as Record<string, unknown>;
+      const v = JSON.parse(raw) as unknown;
+      return v != null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
     } catch {
       return {};
     }
+  }
+
+  /** Robust parse for model output (strict JSON, fenced blocks, or trailing prose). */
+  private parseAgentJsonPayload(text: string): Record<string, unknown> {
+    const stripped = String(text ?? '').trim();
+    if (!stripped) return {};
+    let obj = this.tryJsonObject(stripped);
+    if (Object.keys(obj).length > 0) return obj;
+    const fence = stripped.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fence?.[1]) {
+      obj = this.tryJsonObject(fence[1].trim());
+      if (Object.keys(obj).length > 0) return obj;
+    }
+    const start = stripped.indexOf('{');
+    const end = stripped.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      obj = this.tryJsonObject(stripped.slice(start, end + 1));
+      if (Object.keys(obj).length > 0) return obj;
+    }
+    return { reply: stripped };
+  }
+
+  private safeJson(input: unknown): Record<string, unknown> {
+    if (typeof input !== 'string') return {};
+    return this.tryJsonObject(input.trim());
   }
 
   private normalizeRisk(input: unknown): RiskLevel {

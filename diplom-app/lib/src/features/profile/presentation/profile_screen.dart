@@ -33,7 +33,13 @@ class ProfileScreen extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   IconButton.filledTonal(
-                    onPressed: () => popOrGo(context, '/home'),
+                    onPressed: () => popOrGo(
+                      context,
+                      clinovaNavigationFallback(
+                        isAuthenticated: authState.isAuthenticated,
+                        role: authState.user?.role,
+                      ),
+                    ),
                     icon: const Icon(Icons.arrow_back_rounded),
                   ),
                   const SizedBox(height: 20),
@@ -92,7 +98,13 @@ class ProfileScreen extends ConsumerWidget {
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: () => popOrGo(context, '/home'),
+          onPressed: () => popOrGo(
+            context,
+            clinovaNavigationFallback(
+              isAuthenticated: authState.isAuthenticated,
+              role: authState.user?.role,
+            ),
+          ),
         ),
         title: Text(l10n.profileTitle),
       ),
@@ -208,7 +220,7 @@ class ProfileScreen extends ConsumerWidget {
                     ),
                     onTap: () async {
                       await ref.read(authControllerProvider.notifier).logout();
-                      if (context.mounted) context.go('/home');
+                      if (context.mounted) context.go('/welcome');
                     },
                   ),
                 ],

@@ -765,7 +765,14 @@ class _AppointmentScreenState extends ConsumerState<AppointmentScreen> {
               Row(
                 children: [
                   IconButton.filledTonal(
-                    onPressed: () => popOrGo(context, '/home'),
+                    onPressed: () => popOrGo(
+                      context,
+                      clinovaNavigationFallback(
+                        isAuthenticated:
+                            ref.read(authControllerProvider).isAuthenticated,
+                        role: ref.read(authControllerProvider).user?.role,
+                      ),
+                    ),
                     icon: const Icon(Icons.arrow_back_rounded),
                   ),
                   const SizedBox(width: 12),

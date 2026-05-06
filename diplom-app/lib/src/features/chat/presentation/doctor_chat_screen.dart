@@ -1848,7 +1848,16 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: () => popOrGo(context, '/home'),
+          onPressed: () {
+            final auth = ref.read(authControllerProvider);
+            popOrGo(
+              context,
+              clinovaNavigationFallback(
+                isAuthenticated: auth.isAuthenticated,
+                role: auth.user?.role,
+              ),
+            );
+          },
         ),
         title: Row(
           children: [

@@ -6,6 +6,7 @@ import '../../../core/localization/context_l10n.dart';
 import '../../../core/navigation/go_router_pop.dart';
 import '../../../core/network/clinova_api.dart';
 import '../../../core/widgets/clinova_backdrop.dart';
+import '../../auth/application/auth_controller.dart';
 
 class BranchesScreen extends ConsumerStatefulWidget {
   const BranchesScreen({super.key});
@@ -54,7 +55,13 @@ class _BranchesScreenState extends ConsumerState<BranchesScreen> {
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: () => popOrGo(context, '/home'),
+          onPressed: () => popOrGo(
+            context,
+            clinovaNavigationFallback(
+              isAuthenticated: ref.read(authControllerProvider).isAuthenticated,
+              role: ref.read(authControllerProvider).user?.role,
+            ),
+          ),
         ),
         title: Text(l10n.branchesTitle),
       ),

@@ -15,6 +15,8 @@ import '../../../core/widgets/clinova_backdrop.dart';
 import '../../auth/application/auth_controller.dart';
 
 const _maxVisionImages = 4;
+const _maxChatContentWidth = 720.0;
+const _maxShellWidth = 1180.0;
 
 const _primaryBlue = Color(0xFF1769FF);
 const _navy = Color(0xFF071B4D);
@@ -91,20 +93,38 @@ Future<void> _showFullscreenMemoryImage(BuildContext context, Uint8List bytes) {
   );
 }
 
-final _starterChips = <String, String>{
-  'Цаг яаж авах вэ?': 'Цаг яаж авах вэ?',
-  'Эмчтэй чатлах': 'Эмчтэй чат хаана байна, яаж эхлүүлэх вэ?',
-  'Халуурч байна': 'Би хэд хоног халуураад, ханиаж байна.',
-  'Толгой өвдөж байна': 'Толгой өвдөж, нойр муутай байна.',
+final _premiumQuickChips = <String, String>{
+  'Толгой өвдөөд халуурч байна': 'Толгой өвдөөд халуурч байна',
+  'Арьсан дээр тууралт гарсан': 'Арьсан дээр тууралт гарсан',
+  'Ямар эмч дээр очих вэ?': 'Ямар эмч дээр очих вэ?',
+  'Цаг захиалмаар байна': 'Цаг захиалмаар байна',
   'Яаралтай тусламж': 'Цээж маш хүчтэй өвдөж, амьсгал давчдаж байна.',
 };
 
-final _quickActionPrompts = <String, String>{
-  'Цаг авах': 'Цаг авахад туслаач',
-  'Эмчтэй чатлах': 'Эмчтэй чатлах хэсэг рүү чиглүүлээч',
-  'Боломжтой цаг': 'Надад боломжтой цаг шалгаад өгөөч',
-  'Яаралтай тусламж': 'Яаралтай тусламж хэрэгтэй бол яах вэ?',
-};
+const _safetyDisclaimerShort = 'AI зөвлөгөө нь эмчийн оношийг орлохгүй.';
+
+String _intentMnLabel(String? raw) {
+  switch ((raw ?? '').trim().replaceAll('-', '_')) {
+    case 'symptom_check':
+      return 'Шинж тэмдэг';
+    case 'image_analysis':
+      return 'Зургийн үнэлгээ';
+    case 'appointment_help':
+      return 'Цаг захиалга';
+    case 'doctor_recommendation':
+      return 'Эмчийн санал';
+    case 'service_info':
+      return 'Үйлчилгээ';
+    case 'emergency':
+      return 'Яаралтай';
+    case 'app_help':
+      return 'Аппын тусламж';
+    case 'general':
+      return 'Ерөнхий';
+    default:
+      return raw ?? '';
+  }
+}
 
 String _urgencyMn(String? code) {
   switch ((code ?? '').toUpperCase()) {
@@ -194,6 +214,7 @@ const _knownAgentRoutes = <String>{
   '/doctor-chat',
   '/chat-landing',
   '/branches',
+  '/emergency',
   '/profile',
   '/settings',
   '/agent',
@@ -206,14 +227,221 @@ String _fallbackRouteForActionType(String actionType) {
     case 'SHOW_SERVICES':
     case 'SHOW_DOCTORS':
     case 'SHOW_AVAILABLE_TIMES':
-    case 'VIEW_MY_APPOINTMENTS':
       return '/appointments-landing';
+    case 'VIEW_MY_APPOINTMENTS':
+      return '/appointments';
     case 'SHOW_BRANCHES':
       return '/branches';
     case 'OPEN_PATIENT_CHAT':
       return '/chat-landing';
     default:
       return '/agent';
+  }
+}
+
+/// Small professional mark: medical cross / care — no sparkle.
+class _MedicalAiAvatar extends StatelessWidget {
+  const _MedicalAiAvatar();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF0F766E),
+            _primaryBlue,
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: _primaryBlue.withValues(alpha: 0.22),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: const Icon(
+        Icons.medical_services_rounded,
+        color: Colors.white,
+        size: 22,
+      ),
+    );
+  }
+}
+
+class _PremiumAiEmptyState extends StatelessWidget {
+  const _PremiumAiEmptyState();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 8, 4, 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: _cardBorder),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 24,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const _MedicalAiAvatar(),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Сайн байна уу, би Clinova AI',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              color: _navy,
+                              fontWeight: FontWeight.w800,
+                              height: 1.25,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Шинж тэмдэг тайлбарлах, зураг дээр урьдчилсан зөвлөгөө өгөх, зөв эмч/тасаг санал болгоно.',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: const Color(0xFF475569),
+                              height: 1.45,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  _safetyDisclaimerShort,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: _muted,
+                    height: 1.35,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          LayoutBuilder(
+            builder: (context, c) {
+              final narrow = c.maxWidth < 520;
+              const gap = 10.0;
+
+              Widget featureCard(String title, String subtitle, IconData icon) {
+                return Container(
+                  width: narrow ? double.infinity : null,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.92),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: _cardBorder),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(icon, size: 22, color: const Color(0xFF0F766E)),
+                      const SizedBox(height: 10),
+                      Text(
+                        title,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          color: _navy,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: _muted,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              if (narrow) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    featureCard(
+                      'Зураг шинжилгээ',
+                      'Тууралт, шарх, эмийн шошго зэргийг ерөнхий үнэлнэ.',
+                      Icons.image_search_rounded,
+                    ),
+                    const SizedBox(height: gap),
+                    featureCard(
+                      'Шинж тэмдэг асуумж',
+                      'Нэг нэгээр нь асууж, танд тохирох чиглэл өгнө.',
+                      Icons.chat_bubble_outline_rounded,
+                    ),
+                    const SizedBox(height: gap),
+                    featureCard(
+                      'Цаг захиалга чиглүүлэлт',
+                      'Тасаг, эмч, боломжит цаг руу тань удирдана.',
+                      Icons.event_available_rounded,
+                    ),
+                  ],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: featureCard(
+                      'Зураг шинжилгээ',
+                      'Тууралт, шарх, эмийн шошго зэргийг ерөнхий үнэлнэ.',
+                      Icons.image_search_rounded,
+                    ),
+                  ),
+                  const SizedBox(width: gap),
+                  Expanded(
+                    child: featureCard(
+                      'Шинж тэмдэг асуумж',
+                      'Нэг нэгээр нь асууж, танд тохирох чиглэл өгнө.',
+                      Icons.chat_bubble_outline_rounded,
+                    ),
+                  ),
+                  const SizedBox(width: gap),
+                  Expanded(
+                    child: featureCard(
+                      'Цаг захиалга чиглүүлэлт',
+                      'Тасаг, эмч, боломжит цаг руу тань удирдана.',
+                      Icons.event_available_rounded,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -231,23 +459,12 @@ class _AiAgentScreenState extends ConsumerState<AiAgentScreen> {
   final List<_PendingAgentImage> _pendingImages = [];
   bool _busy = false;
   String? _conversationId;
+  String _retryMessageText = '';
+  final List<Map<String, dynamic>> _retryImagesPayload = [];
 
   @override
   void initState() {
     super.initState();
-    _messages.add(
-      _ChatMessage.agent({
-        'type': 'GENERAL',
-        'answer':
-            'Сайн байна уу! Би **Clinova AI** — эрүүл мэндийн зөвлөгөө, апп ашиглах тусламж, шинж тэмдгийн чиглүүлэлт өгнө. Асуултаа бичнэ үү.\n\n'
-            'Энэ нь эмчийн онош биш. Хүнд шинж илэрвэл эмч эсвэл яаралтай тусламжид хандана уу.',
-        'urgency': 'NONE',
-        'recommendedDepartment': null,
-        'recommendedDoctors': [],
-        'actions': <dynamic>[],
-        'safetyDisclaimer': '',
-      }),
-    );
   }
 
   @override
@@ -261,7 +478,9 @@ class _AiAgentScreenState extends ConsumerState<AiAgentScreen> {
     final out = <Map<String, String>>[];
     for (final m in msgs) {
       if (m.agentPayload != null) {
-        final a = m.agentPayload!['answer']?.toString() ?? '';
+        final p = m.agentPayload!;
+        final rawAns = p['answerText'] ?? p['answer'];
+        final a = rawAns?.toString().trim() ?? '';
         if (a.isNotEmpty) {
           out.add({'role': 'assistant', 'content': a});
         }
@@ -296,6 +515,8 @@ class _AiAgentScreenState extends ConsumerState<AiAgentScreen> {
         ),
       );
       _busy = true;
+      _retryImagesPayload.clear();
+      _retryMessageText = '';
     });
     _scrollToEnd();
 
@@ -332,26 +553,55 @@ class _AiAgentScreenState extends ConsumerState<AiAgentScreen> {
         }
         _messages.add(_ChatMessage.agent(data));
         _busy = false;
+        _retryImagesPayload.clear();
+        _retryMessageText = '';
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _messages.add(
-          _ChatMessage.agent({
-            'type': 'GENERAL',
-            'answer':
-                'AI түр хугацаанд хариу өгөх боломжгүй байна. Та дахин оролдоно уу.',
-            'urgency': 'NONE',
-            'recommendedDepartment': null,
-            'recommendedDoctors': [],
-            'actions': <dynamic>[],
-            'safetyDisclaimer': '',
-          }),
-        );
+        if (_messages.isNotEmpty && _messages.last.userCaption != null) {
+          _messages.removeLast();
+        }
+        _retryMessageText = outgoingText.trim();
+        _retryImagesPayload
+          ..clear()
+          ..addAll(
+            imagesPayload.map((e) => Map<String, dynamic>.from(e)).toList(),
+          );
       });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Холболт алдаатай. Дахин оролдоно уу.'),
+          action: SnackBarAction(
+            label: 'Дахин',
+            onPressed: _retryFromLastFailure,
+          ),
+        ),
+      );
     }
     _scrollToEnd();
+  }
+
+  Future<void> _retryFromLastFailure() async {
+    if (_busy) return;
+    final text = _retryMessageText;
+    if (text.isEmpty && _retryImagesPayload.isEmpty) return;
+    final imgs = <_PendingAgentImage>[];
+    for (final m in _retryImagesPayload) {
+      final b64 = m['base64']?.toString() ?? '';
+      final mime = m['mime']?.toString() ?? 'image/jpeg';
+      if (b64.isEmpty) continue;
+      try {
+        final bytes = base64Decode(b64);
+        if (bytes.isEmpty) continue;
+        imgs.add(_PendingAgentImage(bytes: bytes, mime: mime));
+      } catch (_) {
+        continue;
+      }
+    }
+    await _runAgentConversation(outgoingText: text, outgoingImages: imgs);
   }
 
   Future<void> _sendQuickPrompt(String text) async {
@@ -437,8 +687,14 @@ class _AiAgentScreenState extends ConsumerState<AiAgentScreen> {
       });
     }
 
+    if (actionType == 'OPEN_EMERGENCY_PAGE') {
+      if (!mounted) return;
+      context.push('/emergency');
+      return;
+    }
+
     if (actionType == 'OPEN_EMERGENCY' || route.startsWith('emergency:tel')) {
-      final n = params['number'] ?? '102';
+      final n = params['number'] ?? '103';
       final uri = Uri(scheme: 'tel', path: n);
       if (await canLaunchUrl(uri)) await launchUrl(uri);
       return;
@@ -483,261 +739,376 @@ class _AiAgentScreenState extends ConsumerState<AiAgentScreen> {
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final auth = ref.watch(authControllerProvider);
-    final backLoc = auth.isAuthenticated ? '/home' : '/welcome';
+    final backLoc = clinovaNavigationFallback(
+      isAuthenticated: auth.isAuthenticated,
+      role: auth.user?.role,
+    );
     final latestAgentPayload = _messages.reversed
         .map((m) => m.agentPayload)
         .whereType<Map<String, dynamic>>()
         .cast<Map<String, dynamic>?>()
         .firstWhere((x) => x != null, orElse: () => null);
 
+    final emptyHero = _messages.isEmpty && !_busy;
+    final listItemCount = emptyHero ? 1 : _messages.length + (_busy ? 1 : 0);
+
     return Scaffold(
-      body: ClinovaBackdrop(
-        child: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(8, 4, 12, 8),
-                child: Row(
-                  children: [
-                    IconButton.filledTonal(
-                      onPressed: () => popOrGo(context, backLoc),
-                      icon: const Icon(Icons.arrow_back_rounded),
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+      backgroundColor: const Color(0xFFE8EEF5),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Material(
+            color: Colors.white,
+            elevation: 0,
+            shadowColor: Colors.transparent,
+            child: Container(
+              width: double.infinity,
+              decoration: const BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: Color(0xFFE2E8F0)),
+                ),
+              ),
+              child: SafeArea(
+                bottom: false,
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: _maxShellWidth),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(4, 6, 12, 12),
+                      child: Row(
                         children: [
-                          Text(
-                            l10n.aiTitle,
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              color: _navy,
-                              fontWeight: FontWeight.w800,
+                          IconButton.filledTonal(
+                            style: IconButton.styleFrom(
+                              backgroundColor: const Color(0xFFF1F5F9),
+                              foregroundColor: _navy,
                             ),
+                            onPressed: () => popOrGo(context, backLoc),
+                            icon: const Icon(Icons.arrow_back_rounded),
                           ),
-                          Text(
-                            'Асуулт, шинж тэмдэг, аппын тусламж',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: _muted,
+                          const SizedBox(width: 8),
+                          const _MedicalAiAvatar(),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  l10n.aiTitle,
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    color: _navy,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Шинж тэмдэг, зураг, цаг захиалга дээр тусална',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: _muted,
+                                    height: 1.25,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: const LinearGradient(
-                          colors: [_navy, _primaryBlue],
-                        ),
-                      ),
-                      child: const Icon(
-                        Icons.auto_awesome_rounded,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final showSide = constraints.maxWidth >= 980;
-                    final convo = ListView.builder(
-                      controller: _scroll,
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                      itemCount: _messages.length + (_busy ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        if (_busy && index == _messages.length) {
-                          return const _AiTypingSkeleton();
-                        }
-                        final m = _messages[index];
-                        if (m.agentPayload != null) {
-                          return _AgentCard(
-                            data: m.agentPayload!,
-                            onAction: _runAction,
-                            onFollowUpTap: (q) => _sendQuickPrompt(q),
-                          );
-                        }
-                        return _UserBubble(
-                          caption: m.userCaption ?? 'зураг',
-                          imageBytes: m.userImagePreviews,
-                        );
-                      },
-                    );
-                    if (!showSide) return convo;
-                    return Row(
-                      children: [
-                        Expanded(flex: 3, child: convo),
-                        Container(
-                          width: 320,
-                          margin: const EdgeInsets.fromLTRB(0, 0, 12, 12),
-                          child: _AiSidePanel(
-                            latestPayload: latestAgentPayload,
-                            onAction: _runAction,
-                            onQuestionTap: (q) => _sendQuickPrompt(q),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                child: Row(
-                  children: _starterChips.entries.map((e) {
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ActionChip(
-                        label: Text(e.key),
-                        backgroundColor: _teal.withValues(alpha: 0.14),
-                        side: const BorderSide(color: _cardBorder),
-                        onPressed: _busy ? null : () => _sendQuickPrompt(e.value),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                child: Row(
-                  children: _quickActionPrompts.entries.map((e) {
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: FilledButton.tonal(
-                        onPressed: _busy ? null : () => _sendQuickPrompt(e.value),
-                        child: Text(e.key),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-              Padding(
-                padding: EdgeInsets.fromLTRB(
-                  12,
-                  0,
-                  12,
-                  8 + MediaQuery.of(context).padding.bottom,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (_pendingImages.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            children: List.generate(_pendingImages.length, (i) {
-                              final img = _pendingImages[i];
-                              return Padding(
-                                padding: const EdgeInsets.only(right: 8),
-                                child: Stack(
-                                  clipBehavior: Clip.none,
-                                  children: [
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(10),
-                                      child: GestureDetector(
-                                        onTap: () => _showFullscreenMemoryImage(context, img.bytes),
-                                        child: Image.memory(
-                                          img.bytes,
-                                          width: 64,
-                                          height: 64,
-                                          fit: BoxFit.cover,
-                                        ),
-                                      ),
-                                    ),
-                                    Positioned(
-                                      top: -6,
-                                      right: -6,
-                                      child: Material(
-                                        color: Colors.black87,
-                                        shape: const CircleBorder(),
-                                        clipBehavior: Clip.antiAlias,
-                                        child: IconButton(
-                                          visualDensity: VisualDensity.compact,
-                                          constraints: const BoxConstraints.tightFor(width: 28, height: 28),
-                                          padding: EdgeInsets.zero,
-                                          icon: const Icon(Icons.close, size: 16, color: Colors.white),
-                                          onPressed: _busy
-                                              ? null
-                                              : () {
-                                                  setState(() {
-                                                    _pendingImages.removeAt(i);
-                                                  });
-                                                },
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }),
-                          ),
-                        ),
-                      ),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        IconButton.filled(
-                          style: IconButton.styleFrom(
-                            backgroundColor: _teal.withValues(alpha: 0.2),
-                            foregroundColor: _navy,
-                          ),
-                          onPressed: _busy || _pendingImages.length >= _maxVisionImages
-                              ? null
-                              : _pickImagesForComposer,
-                          icon: const Icon(Icons.add_photo_alternate_outlined),
-                          tooltip: 'Зураг нэмэх',
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: TextField(
-                            controller: _input,
-                            minLines: 1,
-                            maxLines: 4,
-                            textInputAction: TextInputAction.send,
-                            onSubmitted: (_) => _sendFromComposer(),
-                            decoration: InputDecoration(
-                              hintText: 'Асуулт, зурагтай хамт тайлбар…',
-                              filled: true,
-                              fillColor: Colors.white.withValues(alpha: 0.95),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(20),
-                                borderSide: const BorderSide(color: _cardBorder),
+            ),
+          ),
+          Expanded(
+            child: ClinovaBackdrop(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: _maxShellWidth),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final showSide = constraints.maxWidth >= 980;
+                      final listView = ListView.builder(
+                        controller: _scroll,
+                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                        itemCount: listItemCount,
+                        itemBuilder: (context, index) {
+                          if (emptyHero) {
+                            return const _PremiumAiEmptyState();
+                          }
+                          if (_busy && index == _messages.length) {
+                            return const _AiTypingSkeleton();
+                          }
+                          final m = _messages[index];
+                          if (m.agentPayload != null) {
+                            return ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: _maxChatContentWidth),
+                              child: _AgentCard(
+                                data: m.agentPayload!,
+                                onAction: _runAction,
+                                onFollowUpTap: (q) => _sendQuickPrompt(q),
                               ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 18,
-                                vertical: 14,
+                            );
+                          }
+                          return ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: _maxChatContentWidth),
+                            child: _UserBubble(
+                              caption: m.userCaption ?? 'зураг',
+                              imageBytes: m.userImagePreviews,
+                            ),
+                          );
+                        },
+                      );
+                      if (!showSide) return listView;
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: listView,
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(0, 10, 12, 12),
+                            child: SizedBox(
+                              width: 300,
+                              child: _AiSidePanel(
+                                latestPayload: latestAgentPayload,
+                                onAction: _runAction,
+                                onQuestionTap: (q) => _sendQuickPrompt(q),
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 10),
-                        FilledButton(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: _primaryBlue,
-                            padding: const EdgeInsets.all(16),
-                            shape: const CircleBorder(),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Material(
+            color: Colors.white,
+            elevation: 8,
+            shadowColor: Colors.black.withValues(alpha: 0.06),
+            child: SafeArea(
+              top: false,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: _maxChatContentWidth),
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      12,
+                      10,
+                      12,
+                      8 + MediaQuery.of(context).padding.bottom,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: _premiumQuickChips.entries.map((e) {
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 8, bottom: 4),
+                                child: Material(
+                                  color: const Color(0xFFF8FAFC),
+                                  borderRadius: BorderRadius.circular(999),
+                                  child: InkWell(
+                                    onTap: _busy ? null : () => _sendQuickPrompt(e.value),
+                                    borderRadius: BorderRadius.circular(999),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 14,
+                                        vertical: 9,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(999),
+                                        border: Border.all(
+                                          color: const Color(0xFFE2E8F0),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        e.key,
+                                        style: theme.textTheme.labelLarge?.copyWith(
+                                          color: const Color(0xFF334155),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }).toList(),
                           ),
-                          onPressed: _busy ? null : () => _sendFromComposer(),
-                          child: const Icon(Icons.send_rounded),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _safetyDisclaimerShort,
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: _muted,
+                            height: 1.3,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        if (_retryMessageText.isNotEmpty || _retryImagesPayload.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Material(
+                              color: const Color(0xFFFFF7ED),
+                              borderRadius: BorderRadius.circular(12),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.wifi_off_outlined, color: Colors.orange.shade800, size: 20),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'Сүүлийн мессеж илгээгдээгүй.',
+                                        style: theme.textTheme.bodySmall?.copyWith(
+                                          color: const Color(0xFF9A3412),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    TextButton(
+                                      onPressed: _busy ? null : _retryFromLastFailure,
+                                      child: const Text('Дахин'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        if (_pendingImages.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                children: List.generate(_pendingImages.length, (i) {
+                                  final img = _pendingImages[i];
+                                  return Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: Stack(
+                                      clipBehavior: Clip.none,
+                                      children: [
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(12),
+                                          child: GestureDetector(
+                                            onTap: () => _showFullscreenMemoryImage(context, img.bytes),
+                                            child: Image.memory(
+                                              img.bytes,
+                                              width: 64,
+                                              height: 64,
+                                              fit: BoxFit.cover,
+                                            ),
+                                          ),
+                                        ),
+                                        Positioned(
+                                          top: -5,
+                                          right: -5,
+                                          child: Material(
+                                            color: Colors.black87,
+                                            shape: const CircleBorder(),
+                                            clipBehavior: Clip.antiAlias,
+                                            child: IconButton(
+                                              visualDensity: VisualDensity.compact,
+                                              constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+                                              padding: EdgeInsets.zero,
+                                              icon: const Icon(Icons.close, size: 16, color: Colors.white),
+                                              onPressed: _busy
+                                                  ? null
+                                                  : () {
+                                                      setState(() {
+                                                        _pendingImages.removeAt(i);
+                                                      });
+                                                    },
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }),
+                              ),
+                            ),
+                          ),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(28),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.04),
+                                blurRadius: 16,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              IconButton.filledTonal(
+                                style: IconButton.styleFrom(
+                                  backgroundColor: const Color(0xFFF1F5F9),
+                                  foregroundColor: _navy,
+                                ),
+                                onPressed: _busy || _pendingImages.length >= _maxVisionImages
+                                    ? null
+                                    : _pickImagesForComposer,
+                                icon: const Icon(Icons.add_photo_alternate_outlined),
+                                tooltip: 'Зураг нэмэх',
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: TextField(
+                                  controller: _input,
+                                  minLines: 1,
+                                  maxLines: 4,
+                                  textInputAction: TextInputAction.send,
+                                  onSubmitted: (_) => _sendFromComposer(),
+                                  decoration: InputDecoration(
+                                    hintText: 'Асуултаа бичнэ үү…',
+                                    border: InputBorder.none,
+                                    isDense: true,
+                                    filled: false,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 12,
+                                    ),
+                                    hintStyle: theme.textTheme.bodyMedium?.copyWith(
+                                      color: const Color(0xFF94A3B8),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              FilledButton(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: _primaryBlue,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.all(14),
+                                  shape: const CircleBorder(),
+                                  elevation: 0,
+                                ),
+                                onPressed: _busy ? null : () => _sendFromComposer(),
+                                child: const Icon(Icons.send_rounded, size: 22),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
-                  ],
+                  ),
                 ),
               ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -762,7 +1133,14 @@ class _UserBubble extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 12, left: 48),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: _primaryBlue,
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFF1D4ED8),
+              _primaryBlue,
+            ],
+          ),
           borderRadius: const BorderRadius.only(
             topLeft: Radius.circular(18),
             topRight: Radius.circular(18),
@@ -829,25 +1207,44 @@ class _AiTypingSkeleton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Align(
       alignment: Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 14, right: 40, left: 4),
-        padding: const EdgeInsets.all(14),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: _maxChatContentWidth),
+        child: Container(
+        margin: const EdgeInsets.only(bottom: 14, right: 24, left: 0),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.96),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _cardBorder),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 20,
+              offset: const Offset(0, 6),
+            ),
+          ],
         ),
-        child: const Row(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: _primaryBlue.withValues(alpha: 0.85),
+              ),
             ),
-            SizedBox(width: 10),
-            Text('Clinova AI хариулт бэлдэж байна...'),
+            const SizedBox(width: 12),
+            Text(
+              'Clinova AI хариулт бэлдэж байна…',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: const Color(0xFF475569),
+                    fontWeight: FontWeight.w500,
+                  ),
+            ),
           ],
+        ),
         ),
       ),
     );
@@ -872,7 +1269,10 @@ class _AiSidePanel extends StatelessWidget {
     final services = _serviceList(p['recommendedServices']);
     final doctors = _doctorList(p['recommendedDoctors']);
     final slots = _slotList(p['availableSlots']);
-    final actions = _actionList(p['actions']);
+    var actions = _actionList(p['actions']);
+    if (actions.isEmpty) {
+      actions = _actionList(p['suggestedActions']);
+    }
     final followUps = _followUpList(p['followUpQuestions']);
     return Container(
       padding: const EdgeInsets.all(12),
@@ -965,17 +1365,28 @@ class _AgentCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final type = data['type']?.toString() ?? 'GENERAL';
-    final answer = data['answer']?.toString() ?? '';
+    final intentRaw = data['intent']?.toString();
+    final intentLabel = (intentRaw != null && intentRaw.isNotEmpty) ? _intentMnLabel(intentRaw) : '';
+    final rawAnswer = data['answerText'] ?? data['answer'];
+    final answer = rawAnswer?.toString() ?? '';
     final urgency = data['urgency']?.toString();
     final dept = data['recommendedDepartment']?.toString();
     final doctors = _doctorList(data['recommendedDoctors']);
-    final actions = _actionList(data['actions']);
+    var actions = _actionList(data['actions']);
+    if (actions.isEmpty) {
+      actions = _actionList(data['suggestedActions']);
+    }
     final services = _serviceList(data['recommendedServices']);
     final branches = _branchList(data['recommendedBranches']);
     final slots = _slotList(data['availableSlots']);
     final followUps = _followUpList(data['followUpQuestions']);
     final disclaimer = data['safetyDisclaimer']?.toString() ?? '';
     final emergency = (urgency ?? '').toUpperCase() == 'EMERGENCY';
+    final doctorTypeRaw = data['recommendedDoctorType']?.toString().trim() ?? '';
+    final showDoctorType = doctorTypeRaw.isNotEmpty && doctorTypeRaw != 'null' && doctorTypeRaw != '—';
+    final imgDisc = data['imageAnalysisDisclaimer'];
+    final showImageDisclaimer =
+        imgDisc == true || imgDisc?.toString().toLowerCase() == 'true';
 
     return Align(
       alignment: Alignment.centerLeft,
@@ -1006,16 +1417,16 @@ class _AgentCard extends StatelessWidget {
               children: [
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
+                    horizontal: 12,
+                    vertical: 5,
                   ),
                   decoration: BoxDecoration(
                     color: _softBg,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(999),
                     border: Border.all(color: _cardBorder),
                   ),
                   child: Text(
-                    type,
+                    intentLabel.isNotEmpty ? intentLabel : type,
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: _primaryBlue,
                       fontWeight: FontWeight.w800,
@@ -1028,12 +1439,12 @@ class _AgentCard extends StatelessWidget {
                   const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
+                      horizontal: 12,
+                      vertical: 5,
                     ),
                     decoration: BoxDecoration(
                       color: _urgencyColor(urgency).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
                       _urgencyMn(urgency),
@@ -1055,6 +1466,26 @@ class _AgentCard extends StatelessWidget {
                 height: 1.45,
               ),
             ),
+            if (showImageDisclaimer) ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _cardBorder),
+                ),
+                child: Text(
+                  'Зураг дээрх дүгнэлт нь урьдчилсан зөвлөмж бөгөөд эмчийн үзлэгийг орлохгүй.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: _muted,
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
             if (dept != null && dept.isNotEmpty && dept != '—') ...[
               const SizedBox(height: 12),
               Container(
@@ -1085,6 +1516,42 @@ class _AgentCard extends StatelessWidget {
                           ),
                           Text(
                             dept,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              color: _navy,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            if (showDoctorType) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _softBg,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: _cardBorder),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.person_search_outlined, color: _primaryBlue, size: 22),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Зөвлөмжилсөн эмчийн чиглэл',
+                            style: theme.textTheme.labelSmall?.copyWith(color: _muted),
+                          ),
+                          Text(
+                            doctorTypeRaw,
                             style: theme.textTheme.titleSmall?.copyWith(
                               color: _navy,
                               fontWeight: FontWeight.w800,
@@ -1301,21 +1768,36 @@ class _AgentCard extends StatelessWidget {
                 children: actions.map((a) {
                   final label = a['label']?.toString() ?? 'Үргэлжлүүлэх';
                   final type = a['type']?.toString() ?? '';
-                  final isEmergency = type == 'OPEN_EMERGENCY';
-                  return FilledButton.tonal(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: isEmergency
-                          ? const Color(0xFFFEE2E2)
-                          : _primaryBlue.withValues(alpha: 0.12),
-                      foregroundColor: isEmergency
-                          ? const Color(0xFFB91C1C)
-                          : _navy,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+                  final isEmergency =
+                      type == 'OPEN_EMERGENCY' || type == 'OPEN_EMERGENCY_PAGE';
+                  return Material(
+                    color: isEmergency
+                        ? const Color(0xFFFEE2E2)
+                        : const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(14),
+                    child: InkWell(
+                      onTap: () => onAction(a),
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: isEmergency
+                                ? const Color(0xFFFECACA)
+                                : const Color(0xFFE2E8F0),
+                          ),
+                        ),
+                        child: Text(
+                          label,
+                          style: TextStyle(
+                            color: isEmergency ? const Color(0xFFB91C1C) : _navy,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
                       ),
                     ),
-                    onPressed: () => onAction(a),
-                    child: Text(label),
                   );
                 }).toList(),
               ),

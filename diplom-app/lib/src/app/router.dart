@@ -19,6 +19,7 @@ import '../features/chat/presentation/doctor_chat_screen.dart';
 import '../features/doctor/presentation/doctor_dashboard_screen.dart';
 import '../features/doctor/presentation/doctor_notes_screen.dart';
 import '../features/doctor/presentation/doctor_schedule_screen.dart';
+import '../features/emergency/presentation/emergency_screen.dart';
 import '../features/branches/presentation/branches_screen.dart';
 import '../features/home/presentation/home_screen.dart';
 import '../features/profile/presentation/profile_change_password_screen.dart';
@@ -72,6 +73,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             location == '/appointments-landing' ||
             location == '/chat-landing' ||
             location == '/branches' ||
+            location == '/emergency' ||
             location == '/agent' ||
             location == '/profile' ||
             location.startsWith('/profile/');
@@ -86,6 +88,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             location == '/appointments-landing' ||
             location == '/chat-landing' ||
             location == '/branches' ||
+            location == '/emergency' ||
             location == '/profile' ||
             location.startsWith('/profile/');
       case 'PATIENT':
@@ -96,6 +99,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             location == '/appointments-landing' ||
             location == '/chat-landing' ||
             location == '/branches' ||
+            location == '/emergency' ||
             location == '/agent' ||
             location == '/settings' ||
             location == '/doctor-chat' ||
@@ -112,6 +116,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     if (location == '/chat-landing') return true;
     if (location == '/branches') return true;
     if (location == '/agent') return true;
+    if (location == '/emergency') return true;
     return false;
   }
 
@@ -260,6 +265,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/agent',
         builder: (context, state) => const AiAgentScreen(),
+      ),
+      GoRoute(
+        path: '/emergency',
+        builder: (context, state) => const EmergencyScreen(),
       ),
       GoRoute(
         path: '/admin',

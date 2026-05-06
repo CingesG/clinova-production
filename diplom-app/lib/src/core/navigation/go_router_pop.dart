@@ -1,6 +1,29 @@
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
+/// Dashboard path for a signed-in user (patient shell vs doctor vs admin).
+String clinovaAuthenticatedHome(String? role) {
+  switch (role) {
+    case 'ADMIN':
+    case 'STAFF':
+      return '/admin';
+    case 'DOCTOR':
+      return '/doctor';
+    default:
+      return '/home';
+  }
+}
+
+/// Use with [popOrGo] when the stack may be empty (deep link). Guests typically use [guestFallback] `/welcome`.
+String clinovaNavigationFallback({
+  required bool isAuthenticated,
+  String? role,
+  String guestFallback = '/welcome',
+}) {
+  if (!isAuthenticated) return guestFallback;
+  return clinovaAuthenticatedHome(role);
+}
+
 /// Pops the GoRouter page stack when possible; otherwise **[location]** (no throw).
 ///
 /// Use instead of raw [GoRouter.pop] / [BuildContext.pop] for top-level screens that
