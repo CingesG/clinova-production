@@ -4,9 +4,13 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../media/clinova_avatar_url.dart';
+import '../media/doctor_avatar_mapper.dart';
 
 /// Circle avatar with safe network/memory image loading; falls back to [initialsText]
 /// on load error, invalid URL, or missing image (avoids [NetworkImage] throwing on web).
+///
+/// When [doctorPortraitFallback] is true, bundled flat doctor art is used instead of
+/// initials (for network failure, missing URL, and loading placeholder on doctors).
 class ClinovaCircleAvatar extends StatelessWidget {
   const ClinovaCircleAvatar({
     super.key,
@@ -16,6 +20,9 @@ class ClinovaCircleAvatar extends StatelessWidget {
     this.foregroundColor,
     this.networkUrl,
     this.memoryBytes,
+    this.doctorPortraitFallback = false,
+    this.doctorDisplayName,
+    this.doctorGender,
   });
 
   final double radius;
@@ -24,6 +31,9 @@ class ClinovaCircleAvatar extends StatelessWidget {
   final Color? foregroundColor;
   final String? networkUrl;
   final Uint8List? memoryBytes;
+  final bool doctorPortraitFallback;
+  final String? doctorDisplayName;
+  final String? doctorGender;
 
   static bool _isLoadableHttpUrl(String s) {
     final u = Uri.tryParse(s.trim());
@@ -35,6 +45,62 @@ class ClinovaCircleAvatar extends StatelessWidget {
   int _decodeExtent(BuildContext context, double logicalSide, int maxPx) {
     final dpr = MediaQuery.devicePixelRatioOf(context);
     return (logicalSide * dpr).ceil().clamp(1, maxPx);
+  }
+
+  Widget _textFallback() {
+    return Center(
+      child: Text(
+        initialsText,
+        style: TextStyle(
+          fontSize: radius * 0.55,
+          fontWeight: FontWeight.w800,
+          color: foregroundColor,
+        ),
+      ),
+    );
+  }
+
+  Widget _doctorFallback(BuildContext context) {
+    final d = radius * 2;
+    final px = _decodeExtent(context, d, 480);
+    final path = resolveDoctorAvatar(
+      doctorName: doctorDisplayName?.trim().isNotEmpty == true
+          ? doctorDisplayName!
+          : initialsText,
+      gender: doctorGender,
+    );
+    return Image.asset(
+      path,
+      fit: BoxFit.cover,
+      width: d,
+      height: d,
+      cacheWidth: px,
+      cacheHeight: px,
+      gaplessPlayback: true,
+      errorBuilder: (_, _, _) => _textFallback(),
+      frameBuilder: (context, child, frame, wasSync) {
+        if (wasSync || frame != null) {
+          return AnimatedOpacity(
+            opacity: 1,
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            child: child,
+          );
+        }
+        return AnimatedOpacity(
+          opacity: 0,
+          duration: const Duration(milliseconds: 120),
+          child: child,
+        );
+      },
+    );
+  }
+
+  Widget _fallback(BuildContext context) {
+    if (doctorPortraitFallback) {
+      return _doctorFallback(context);
+    }
+    return _textFallback();
   }
 
   @override
@@ -57,19 +123,6 @@ class ClinovaCircleAvatar extends StatelessWidget {
       netUrl = trimmed;
     }
 
-    Widget fallback() {
-      return Center(
-        child: Text(
-          initialsText,
-          style: TextStyle(
-            fontSize: radius * 0.55,
-            fontWeight: FontWeight.w800,
-            color: foregroundColor,
-          ),
-        ),
-      );
-    }
-
     final Widget inner;
     if (hasMem) {
       inner = Image.memory(
@@ -77,7 +130,7 @@ class ClinovaCircleAvatar extends StatelessWidget {
         fit: BoxFit.cover,
         width: d,
         height: d,
-        errorBuilder: (_, _, _) => fallback(),
+        errorBuilder: (_, _, _) => _fallback(context),
       );
     } else if (bundledPath != null) {
       final px = _decodeExtent(context, d, 480);
@@ -89,12 +142,17 @@ class ClinovaCircleAvatar extends StatelessWidget {
         cacheWidth: px,
         cacheHeight: px,
         gaplessPlayback: true,
-        errorBuilder: (_, _, _) => fallback(),
+        errorBuilder: (_, _, _) => _fallback(context),
         frameBuilder: (context, child, frame, wasSync) {
           if (wasSync || frame != null) {
-            return child;
+            return AnimatedOpacity(
+              opacity: 1,
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOut,
+              child: child,
+            );
           }
-          return fallback();
+          return _fallback(context);
         },
       );
     } else if (netUrl != null) {
@@ -108,11 +166,11 @@ class ClinovaCircleAvatar extends StatelessWidget {
         memCacheHeight: px,
         fadeInDuration: const Duration(milliseconds: 200),
         fadeOutDuration: Duration.zero,
-        placeholder: (context, url) => fallback(),
-        errorWidget: (context, url, error) => fallback(),
+        placeholder: (context, url) => _fallback(context),
+        errorWidget: (context, url, error) => _fallback(context),
       );
     } else {
-      inner = fallback();
+      inner = _fallback(context);
     }
 
     return SizedBox(

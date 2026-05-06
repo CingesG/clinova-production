@@ -1197,6 +1197,37 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
     return p != null && p != ChatCallOverlayPhase.idle;
   }
 
+  /// Chat peer: patients see doctor flat-avatar fallback; doctors see patient initials.
+  Widget _peerCallAvatar(BuildContext context, {required double radius}) {
+    final auth = ref.read(authControllerProvider);
+    final isDoctorSide = auth.user?.role == 'DOCTOR';
+    final peer = selectedDoctor;
+    if (peer == null) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: Colors.white.withValues(alpha: 0.1),
+        child: Icon(
+          Icons.person_rounded,
+          size: radius * 1.05,
+          color: Colors.white,
+        ),
+      );
+    }
+    final name = _doctorDisplayName(peer);
+    final initial = name.isNotEmpty
+        ? String.fromCharCode(name.runes.first).toUpperCase()
+        : '?';
+    return ClinovaCircleAvatar(
+      radius: radius,
+      initialsText: initial,
+      backgroundColor: Colors.white.withValues(alpha: 0.12),
+      foregroundColor: Colors.white,
+      networkUrl: _doctorAvatarUrl(peer),
+      doctorPortraitFallback: !isDoctorSide,
+      doctorDisplayName: name,
+    );
+  }
+
   Widget _buildCallOverlay() {
     final rtc = _rtcSession;
     if (rtc == null) return const SizedBox.shrink();
@@ -1232,6 +1263,8 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                 child: Column(
                   children: [
                     const Spacer(),
+                    _peerCallAvatar(context, radius: 44),
+                    const SizedBox(height: 14),
                     Icon(
                       Icons.call_received_rounded,
                       size: 56,
@@ -1350,15 +1383,7 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                       child: Column(
                         children: [
                           const Spacer(),
-                          CircleAvatar(
-                            radius: 48,
-                            backgroundColor: Colors.white.withValues(alpha: 0.1),
-                            child: const Icon(
-                              Icons.person_rounded,
-                              size: 48,
-                              color: Colors.white,
-                            ),
-                          ),
+                          _peerCallAvatar(context, radius: 48),
                           const SizedBox(height: 20),
                           Text(
                             peerName.isNotEmpty ? peerName : 'Эмч',
@@ -1461,15 +1486,7 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                       child: Column(
                         children: [
                           const Spacer(),
-                          CircleAvatar(
-                            radius: 48,
-                            backgroundColor: Colors.white.withValues(alpha: 0.1),
-                            child: const Icon(
-                              Icons.phone_in_talk_rounded,
-                              size: 48,
-                              color: Colors.white,
-                            ),
-                          ),
+                          _peerCallAvatar(context, radius: 48),
                           const SizedBox(height: 20),
                           Text(
                             peerName.isNotEmpty ? peerName : 'Дуудлага',
@@ -1877,6 +1894,8 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                   networkUrl: selectedDoctor != null
                       ? _doctorAvatarUrl(selectedDoctor!)
                       : null,
+                  doctorPortraitFallback: !isDoctorRole,
+                  doctorDisplayName: name,
                 );
               },
             ),

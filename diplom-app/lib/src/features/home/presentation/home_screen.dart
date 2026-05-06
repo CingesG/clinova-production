@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 
 import '../../../core/localization/context_l10n.dart';
 import '../../../core/media/clinova_avatar_url.dart';
+import '../../../core/media/doctor_avatar_mapper.dart';
 import '../../../core/network/clinova_api.dart';
 import '../../../core/widgets/clinova_backdrop.dart';
 import '../../../core/widgets/clinova_circle_avatar.dart';
@@ -778,7 +779,7 @@ class _StaffPreviewSection extends StatelessWidget {
         ),
         const SizedBox(height: 14),
         SizedBox(
-          height: 140,
+          height: 156,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: preview.length,
@@ -796,8 +797,8 @@ class _StaffPreviewSection extends StatelessWidget {
                   ? String.fromCharCode(name.runes.first).toUpperCase()
                   : '?';
               return Container(
-                width: 208,
-                padding: const EdgeInsets.all(14),
+                width: 220,
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.92),
                   borderRadius: BorderRadius.circular(24),
@@ -817,11 +818,12 @@ class _StaffPreviewSection extends StatelessWidget {
                   children: [
                     _DoctorAvatar(
                       avatarUrl: avatarUrl,
+                      doctorName: name,
                       initial: initial,
                       backgroundColor: cs.primaryContainer,
                       textColor: cs.onPrimaryContainer,
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
                     Text(
                       name.isEmpty ? '—' : name,
                       maxLines: 2,
@@ -862,12 +864,14 @@ class _StaffPreviewSection extends StatelessWidget {
 class _DoctorAvatar extends StatelessWidget {
   const _DoctorAvatar({
     required this.avatarUrl,
+    required this.doctorName,
     required this.initial,
     required this.backgroundColor,
     required this.textColor,
   });
 
   final String? avatarUrl;
+  final String doctorName;
   final String initial;
   final Color backgroundColor;
   final Color textColor;
@@ -875,11 +879,13 @@ class _DoctorAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ClinovaCircleAvatar(
-      radius: 22,
+      radius: 26,
       initialsText: initial,
       backgroundColor: backgroundColor,
       foregroundColor: textColor,
       networkUrl: avatarUrl,
+      doctorPortraitFallback: true,
+      doctorDisplayName: doctorName.isEmpty ? initial : doctorName,
     );
   }
 }
@@ -1484,24 +1490,48 @@ class _AvailabilityCard extends StatelessWidget {
         ],
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: accent.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(20),
+          ClipOval(
+            child: SizedBox(
+              width: 56,
+              height: 56,
+              child: Image.asset(
+                resolveDoctorAvatar(doctorName: doctor),
+                fit: BoxFit.cover,
+                cacheWidth:
+                    (56 * MediaQuery.devicePixelRatioOf(context)).ceil().clamp(
+                          112,
+                          320,
+                        ),
+                cacheHeight:
+                    (56 * MediaQuery.devicePixelRatioOf(context)).ceil().clamp(
+                          112,
+                          320,
+                        ),
+                gaplessPlayback: true,
+                errorBuilder: (context, error, stackTrace) => ColoredBox(
+                  color: accent.withValues(alpha: 0.12),
+                  child: Icon(Icons.person_rounded, color: accent, size: 28),
+                ),
+              ),
             ),
-            child: Icon(Icons.local_hospital_rounded, color: accent),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(doctor, style: theme.textTheme.titleMedium),
                 const SizedBox(height: 4),
-                Text('$specialty  •  $branch'),
+                Text(
+                  '$specialty  •  $branch',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
                 const SizedBox(height: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -1523,7 +1553,7 @@ class _AvailabilityCard extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           FilledButton(
             onPressed: () {
               final q = <String, String>{};

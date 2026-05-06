@@ -62,8 +62,10 @@ function avatarFor(userKey: string): string {
 }
 
 /** Bundled Flutter asset path (resolved client-side); not an HTTP URL. */
-function demoDoctorBundledAvatar(filename: string): string {
-  return `flutter-asset:assets/images/doctors/${filename}`;
+function demoDoctorSeedAvatar(gender: 'male' | 'female'): string {
+  return gender === 'female'
+    ? 'flutter-asset:assets/images/avatars/doctor_female.png'
+    : 'flutter-asset:assets/images/avatars/doctor_male.png';
 }
 
 function secureRandomPassword(): string {
@@ -238,8 +240,8 @@ type DoctorSeed = {
   bio: string;
   experienceYears: number;
   consultationFee: number;
-  /** PNG under `diplom-app/assets/images/doctors/` (bundled in the app). */
-  portraitFile: string;
+  /** Demo avatar gender maps to flat illustrations under `assets/images/avatars/`. */
+  gender: 'male' | 'female';
 };
 
 const DOCTOR_SEEDS: DoctorSeed[] = [
@@ -254,7 +256,7 @@ const DOCTOR_SEEDS: DoctorSeed[] = [
     bio: 'Дотрын тасгийн мэргэшсэн эмч. Хоол боловсруулах эрхтэн, ерөнхий дотоодын оношилгоонд төвлөрнө.',
     experienceYears: 12,
     consultationFee: 30_000,
-    portraitFile: 'doctor-01.jpg',
+    gender: 'male',
   },
   {
     email: 'doctor.solongo@clinova.local',
@@ -267,7 +269,7 @@ const DOCTOR_SEEDS: DoctorSeed[] = [
     bio: 'Хүүхдийн эмч — урьдчилан сэргийлэлт, халуурах, хоол тэжээлийн зөвлөгөө.',
     experienceYears: 8,
     consultationFee: 35_000,
-    portraitFile: 'doctor-02.jpg',
+    gender: 'female',
   },
   {
     email: 'doctor.ariunzaya@clinova.local',
@@ -280,7 +282,7 @@ const DOCTOR_SEEDS: DoctorSeed[] = [
     bio: 'Эмэгтэйчүүдийн эрүүл мэнд, жирэмсэн хяналт, эрт илрүүлэлт.',
     experienceYears: 10,
     consultationFee: 45_000,
-    portraitFile: 'doctor-03.jpg',
+    gender: 'female',
   },
   {
     email: 'doctor.temuulen@clinova.local',
@@ -293,7 +295,7 @@ const DOCTOR_SEEDS: DoctorSeed[] = [
     bio: 'Гэмтэл, сэргээн заслын чиглэлээр зөвлөгөө өгнө.',
     experienceYears: 9,
     consultationFee: 40_000,
-    portraitFile: 'doctor-04.jpg',
+    gender: 'male',
   },
   {
     email: 'doctor.munkherdene@clinova.local',
@@ -306,7 +308,7 @@ const DOCTOR_SEEDS: DoctorSeed[] = [
     bio: 'Чих хамар хоолойын мэргэжилтэн — сонсгол, ярьсангүйрлийн үзлэг.',
     experienceYears: 7,
     consultationFee: 35_000,
-    portraitFile: 'doctor-05.jpg',
+    gender: 'male',
   },
   {
     email: 'doctor.oyunchimeg@clinova.local',
@@ -319,7 +321,7 @@ const DOCTOR_SEEDS: DoctorSeed[] = [
     bio: 'Шүдний эмч — ариутгал, ерөнхий оношилгоо, анхны эмчилгээний төлөвлөгөө.',
     experienceYears: 11,
     consultationFee: 25_000,
-    portraitFile: 'doctor-06.jpg',
+    gender: 'female',
   },
   {
     email: 'doctor.batorgil@clinova.local',
@@ -332,7 +334,7 @@ const DOCTOR_SEEDS: DoctorSeed[] = [
     bio: 'Зүрх судасны эмч — даралт, зүрхний иог дагаж хяналт.',
     experienceYears: 14,
     consultationFee: 50_000,
-    portraitFile: 'doctor-07.jpg',
+    gender: 'male',
   },
   {
     email: 'doctor.nomin@clinova.local',
@@ -345,7 +347,7 @@ const DOCTOR_SEEDS: DoctorSeed[] = [
     bio: 'Мэдрэлийн эмч — толгой өвдөлт, нойр, стрессийн зөвлөгөө.',
     experienceYears: 6,
     consultationFee: 45_000,
-    portraitFile: 'doctor-08.jpg',
+    gender: 'female',
   },
   {
     email: 'doctor.enkhjin@clinova.local',
@@ -358,7 +360,7 @@ const DOCTOR_SEEDS: DoctorSeed[] = [
     bio: 'Арьс харшлын эмч — тууралт, харшил, арьсны үзлэг.',
     experienceYears: 5,
     consultationFee: 35_000,
-    portraitFile: 'doctor-01.jpg',
+    gender: 'female',
   },
   {
     email: 'doctor.huslen@clinova.local',
@@ -371,7 +373,7 @@ const DOCTOR_SEEDS: DoctorSeed[] = [
     bio: 'Нүдний эмч — ойр, холын харааны үзлэг, зөвлөгөө.',
     experienceYears: 9,
     consultationFee: 40_000,
-    portraitFile: 'doctor-02.jpg',
+    gender: 'male',
   },
 ];
 
@@ -762,7 +764,7 @@ async function main() {
         lastName: doc.lastName,
         phoneNumber,
         branchId: branch.id,
-        avatarUrl: demoDoctorBundledAvatar(doc.portraitFile),
+        avatarUrl: demoDoctorSeedAvatar(doc.gender),
       },
       update: {
         firstName: doc.firstName,
@@ -772,7 +774,7 @@ async function main() {
         role: Role.DOCTOR,
         status: UserStatus.ACTIVE,
         emailVerified: true,
-        avatarUrl: demoDoctorBundledAvatar(doc.portraitFile),
+        avatarUrl: demoDoctorSeedAvatar(doc.gender),
         ...(newPasswordHash ? { passwordHash: newPasswordHash } : {}),
       },
     });
@@ -794,7 +796,7 @@ async function main() {
         bio: doc.bio,
         experienceYears: doc.experienceYears,
         consultationFee: doc.consultationFee,
-        avatarUrl: demoDoctorBundledAvatar(doc.portraitFile),
+        avatarUrl: demoDoctorSeedAvatar(doc.gender),
         active: true,
       },
       update: {
@@ -803,7 +805,7 @@ async function main() {
         bio: doc.bio,
         experienceYears: doc.experienceYears,
         consultationFee: doc.consultationFee,
-        avatarUrl: demoDoctorBundledAvatar(doc.portraitFile),
+        avatarUrl: demoDoctorSeedAvatar(doc.gender),
         active: true,
       },
     });
