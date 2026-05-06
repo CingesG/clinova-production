@@ -387,6 +387,17 @@ class AuthController extends StateNotifier<AuthState> {
         clearError: true,
       );
     } on DioException catch (error) {
+      if (error.type == DioExceptionType.connectionTimeout ||
+          error.type == DioExceptionType.receiveTimeout ||
+          error.type == DioExceptionType.sendTimeout ||
+          error.type == DioExceptionType.connectionError) {
+        state = state.copyWith(
+          isBusy: false,
+          errorMessage:
+              'Сервертэй холбогдож чадсангүй. Интернет эсвэл API хаягаа шалгана уу.',
+        );
+        return;
+      }
       state = state.copyWith(
         isBusy: false,
         errorMessage: _googleBackendMessage(error),
@@ -802,13 +813,16 @@ class AuthController extends StateNotifier<AuthState> {
   String _googleBackendMessage(DioException error) {
     final base = _messageFromError(error);
     if (base.contains('Google sign-in is not configured')) {
-      return 'Google нэвтрэлт сервер дээр тохируулагдаагүй байна.';
+      return 'Google нэвтрэлт сервер дээр тохируулагдаагүй байна. (GOOGLE_CLIENT_ID эсвэл GOOGLE_CLIENT_IDS заавал.)';
     }
     if (base.contains('Invalid Google token')) {
-      return 'Google баталгаажуулалт амжилтгүй. Client ID таарах эсэхийг шалгана уу.';
+      return 'Google баталгаажуулалт амжилтгүй. Вэб Client ID болон Google Cloud Console дээрх Authorized JavaScript origins-ийг (clinova.uk, www.clinova.uk) шалгана уу.';
     }
     if (base.contains('Google account has no email')) {
       return 'Google бүртгэлд имэйл байхгүй байна.';
+    }
+    if (base.contains('not active')) {
+      return 'Энэ бүртгэл идэвхгүй байна. Админтай холбогдоно уу.';
     }
     return base;
   }

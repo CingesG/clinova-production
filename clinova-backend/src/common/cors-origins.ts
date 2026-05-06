@@ -14,6 +14,12 @@ export function strictProductionBrowserCors(): boolean {
   return process.env.ALLOW_LEGACY_DEV_CORS !== 'true';
 }
 
+/** Production web (apex + www) — API allows both even if env only lists one. */
+const CLINOVA_PRODUCTION_BROWSER_ORIGINS = [
+  'https://clinova.uk',
+  'https://www.clinova.uk',
+] as const;
+
 /** FRONTEND_URL + CORS_ORIGIN (товхоолсон) жагсаалт */
 export function resolveBrowserOriginAllowlist(): string[] {
   const corsRaw = process.env.CORS_ORIGIN?.split(',')
@@ -23,6 +29,7 @@ export function resolveBrowserOriginAllowlist(): string[] {
   const set = new Set<string>();
   if (frontendUrl) set.add(frontendUrl);
   for (const o of corsRaw ?? []) set.add(o);
+  for (const o of CLINOVA_PRODUCTION_BROWSER_ORIGINS) set.add(o);
   return [...set];
 }
 

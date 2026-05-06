@@ -12,7 +12,13 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { AuthProvider, OtpPurpose, Role, UserStatus } from '@prisma/client';
+import {
+  AuthProvider,
+  OtpPurpose,
+  Prisma,
+  Role,
+  UserStatus,
+} from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import type { SignOptions } from 'jsonwebtoken';
@@ -977,9 +983,20 @@ export class AuthService {
   async googleSignIn(idToken: string) {
     await this.ensureBootstrapSeeded();
 
-    const audiences = this.googleIdTokenAudiences();
+    let audiences: string[];
+    try {
+      audiences = this.googleIdTokenAudiences();
+    } catch (err) {
+      this.logger.error(`googleSignIn: reading Google client config: ${err}`);
+      throw new BadRequestException(
+        'Google sign-in is not configured. Set GOOGLE_CLIENT_ID (Web client ID from Google Cloud Console) or GOOGLE_CLIENT_IDS. This server verifies ID tokens only; GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URI are not used by POST /auth/google.',
+      );
+    }
+
     if (audiences.length === 0) {
-      throw new BadRequestException('Google sign-in is not configured.');
+      throw new BadRequestException(
+        'Google sign-in is not configured. Set GOOGLE_CLIENT_ID (Web client ID from Google Cloud Console) or GOOGLE_CLIENT_IDS. This server verifies ID tokens only; GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URI are not used by POST /auth/google.',
+      );
     }
 
     const client = new OAuth2Client();
@@ -990,7 +1007,8 @@ export class AuthService {
         audience: audiences.length === 1 ? audiences[0] : audiences,
       });
       payload = ticket.getPayload() ?? undefined;
-    } catch {
+    } catch (err) {
+      this.logger.warn(`googleSignIn: verifyIdToken failed: ${err}`);
       throw new UnauthorizedException(
         'Invalid Google token — use the OAuth Web Client ID from Google Cloud Console (or match GOOGLE_CLIENT_ID / comma-separated GOOGLE_CLIENT_IDS).',
       );
@@ -1000,7 +1018,35 @@ export class AuthService {
       throw new UnauthorizedException('Google account has no email.');
     }
 
+    const displayNameFromPayload = (
+      p: TokenPayload,
+    ): { firstName: string; lastName: string } => {
+      const given = p.given_name?.trim();
+      const family = p.family_name?.trim();
+      if (given || family) {
+        return {
+          firstName: given && given.length > 0 ? given : 'Clinova',
+          lastName: family && family.length > 0 ? family : 'Patient',
+        };
+      }
+      const full = p.name?.trim();
+      if (full) {
+        const parts = full.split(/\s+/).filter(Boolean);
+        if (parts.length === 1) {
+          return { firstName: parts[0]!, lastName: 'Patient' };
+        }
+        return {
+          firstName: parts[0]!,
+          lastName: parts.slice(1).join(' '),
+        };
+      }
+      return { firstName: 'Clinova', lastName: 'Patient' };
+    };
+
     const email = this.normalizeEmail(payload.email);
+    const { firstName: newFirst, lastName: newLast } =
+      displayNameFromPayload(payload);
+
     let user = await this.prisma.user.findUnique({
       where: { email },
       include: USER_INCLUDE,
@@ -1014,9 +1060,9 @@ export class AuthService {
           emailVerified: true,
           status: UserStatus.ACTIVE,
           role: Role.PATIENT,
-          firstName: payload.given_name?.trim() || 'Clinova',
-          lastName: payload.family_name?.trim() || 'Patient',
-          avatarUrl: payload.picture ?? null,
+          firstName: newFirst,
+          lastName: newLast,
+          avatarUrl: payload.picture?.trim() || null,
           patientProfile: { create: {} },
         },
         include: USER_INCLUDE,
@@ -1025,6 +1071,22 @@ export class AuthService {
       if (user.status !== UserStatus.ACTIVE) {
         throw new ForbiddenException('This account is not active.');
       }
+
+      const patch: Prisma.UserUpdateInput = {
+        emailVerified: true,
+      };
+      if (user.authProvider === AuthProvider.GOOGLE) {
+        if (newFirst.length > 0) patch.firstName = newFirst;
+        if (newLast.length > 0) patch.lastName = newLast;
+        const pic = payload.picture?.trim();
+        if (pic) patch.avatarUrl = pic;
+      }
+
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: patch,
+        include: USER_INCLUDE,
+      });
     }
 
     const tokens = await this.issueTokenPair(user.id);
