@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -48,6 +49,7 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
   final messages = <Map<String, dynamic>>[];
 
   List<Map<String, dynamic>> doctors = const [];
+  Map<String, dynamic>? lockedOutDoctor;
   Map<String, int> unreadByContact = const {};
   Map<String, dynamic>? selectedDoctor;
   String activeRoomId = '';
@@ -58,6 +60,7 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
   StreamSubscription<Map<String, dynamic>>? _chatSub;
   StreamSubscription<Map<String, dynamic>>? _typingSub;
   StreamSubscription<Map<String, dynamic>>? _callSub;
+  StreamSubscription<Map<String, dynamic>>? _chatRequestResolvedSub;
   Timer? _typingDebounce;
   String? typingUserId;
   ClinovaRtcCallSession? _rtcSession;
@@ -433,6 +436,13 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
       if (!mounted) return;
       unawaited(_routeCallSignal(data));
     });
+    _chatRequestResolvedSub =
+        realtime.chatRequestResolvedStream.listen((data) {
+      if (!mounted) return;
+      if (data['outcome']?.toString() == 'ACCEPTED') {
+        unawaited(_loadDoctors());
+      }
+    });
     Future<void>.microtask(_loadDoctors);
   }
 
@@ -441,6 +451,7 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
     _chatSub?.cancel();
     _typingSub?.cancel();
     _callSub?.cancel();
+    _chatRequestResolvedSub?.cancel();
     _typingDebounce?.cancel();
     final rel = _voiceFingerRelease;
     if (rel != null && !rel.isCompleted) {
@@ -463,34 +474,23 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
       loadError = null;
     });
     try {
-      final role = ref.read(authControllerProvider).user?.role ?? 'PATIENT';
+      final api = ref.read(clinovaApiProvider);
+      final authState = ref.read(authControllerProvider);
+      final role = authState.user?.role ?? 'PATIENT';
       final isDoctorRole = role == 'DOCTOR';
+      final authedPatient = authState.isAuthenticated && role == 'PATIENT';
+
       final list = isDoctorRole
           ? await _loadDoctorPatients()
-          : await ref.read(clinovaApiProvider).getDoctors();
+          : (authedPatient
+              ? await api.getPatientAllowedChatDoctors()
+              : await api.getDoctors());
+
       if (!mounted) return;
-      if (list.isEmpty) {
-        setState(() {
-          doctors = list;
-          unreadByContact = const {};
-          selectedDoctor = null;
-          activeRoomId = '';
-          loadingDoctors = false;
-        });
-        return;
-      }
-      final initialUnread = <String, int>{};
-      for (final d in list) {
-        final key = _contactKeyForDoctor(d, isDoctorRole);
-        if (key != null) initialUnread[key] = unreadByContact[key] ?? 0;
-      }
-      setState(() {
-        doctors = list;
-        unreadByContact = initialUnread;
-        loadingDoctors = false;
-      });
+
       final presetId = widget.initialDoctorProfileId?.trim();
       Map<String, dynamic>? presetDoctor;
+      Map<String, dynamic>? lockedDoc;
       if (presetId != null && presetId.isNotEmpty) {
         for (final d in list) {
           if (d['id']?.toString() == presetId) {
@@ -498,18 +498,59 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
             break;
           }
         }
+        if (authedPatient && presetDoctor == null) {
+          try {
+            lockedDoc = await api.getDoctor(presetId);
+          } catch (_) {}
+        }
       }
-      final pick = presetDoctor ?? list.first;
-      final patientId = _patientUserId;
-      if (patientId != null) {
-        await _selectDoctor(pick);
-      } else {
+
+      final initialUnread = <String, int>{};
+      for (final d in list) {
+        final key = _contactKeyForDoctor(d, isDoctorRole);
+        if (key != null) initialUnread[key] = unreadByContact[key] ?? 0;
+      }
+
+      setState(() {
+        doctors = list;
+        unreadByContact = initialUnread;
+        lockedOutDoctor = lockedDoc;
+        loadingDoctors = false;
+      });
+
+      if (list.isEmpty && lockedDoc == null) {
         setState(() {
-          selectedDoctor = pick;
+          selectedDoctor = null;
           activeRoomId = '';
           messages.clear();
         });
+        return;
       }
+
+      final patientId = _patientUserId;
+      final pick = presetDoctor ?? (list.isNotEmpty ? list.first : null);
+
+      if (lockedDoc != null && pick == null) {
+        setState(() {
+          selectedDoctor = null;
+          activeRoomId = '';
+          messages.clear();
+        });
+        return;
+      }
+
+      if (pick != null) {
+        if (patientId != null) {
+          await _selectDoctor(pick);
+        } else {
+          setState(() {
+            selectedDoctor = pick;
+            activeRoomId = '';
+            messages.clear();
+          });
+        }
+      }
+
       if (mounted) {
         await _tryFlushInboundAfterDoctorsLoaded();
       }
@@ -536,6 +577,124 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
       return aName.compareTo(bName);
     });
     return contacts;
+  }
+
+  Future<void> _promptChatRequest(String doctorProfileId) async {
+    final note = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Чат хүсэлт илгээх'),
+        content: TextField(
+          controller: note,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            labelText: 'Шалтгаан (заавал биш)',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Болих'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Илгээх'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true && mounted) {
+      try {
+        await ref.read(clinovaApiProvider).createDoctorChatRequest(
+              doctorProfileId: doctorProfileId,
+              note: note.text.trim().isEmpty ? null : note.text.trim(),
+            );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Чат хүсэлт илгээгдлээ.')),
+          );
+          setState(() => lockedOutDoctor = null);
+          await _loadDoctors();
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('$e')),
+          );
+        }
+      }
+    }
+    note.dispose();
+  }
+
+  Widget _buildLockedOutDoctorPanel(ThemeData theme, ColorScheme cs) {
+    final d = lockedOutDoctor!;
+    final docId = d['id']?.toString() ?? '';
+    final name = _doctorDisplayName(d);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Material(
+        color: const Color(0xFFF8FAFC),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Color(0xFFE2E8F0)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Энэ эмчтэй чатлахын тулд цаг захиалах эсвэл чат хүсэлт илгээнэ үү.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  height: 1.35,
+                  color: const Color(0xFF334155),
+                ),
+              ),
+              if (name.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  name,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: docId.isEmpty
+                          ? null
+                          : () => context.push(
+                                Uri(
+                                  path: '/appointments/book',
+                                  queryParameters: {'doctorId': docId},
+                                ).toString(),
+                              ),
+                      child: const Text('Цаг захиалах'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: docId.isEmpty
+                          ? null
+                          : () => unawaited(_promptChatRequest(docId)),
+                      child: const Text('Чат хүсэлт илгээх'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _selectDoctor(Map<String, dynamic> doctor) async {
@@ -601,8 +760,22 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
         loadingMessages = false;
       });
       _scrollToBottom();
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
+      var msg = 'Зурвасыг ачаалж чадсангүй.';
+      if (e is DioException) {
+        final code = e.response?.statusCode;
+        final data = e.response?.data;
+        if (data is Map && data['message'] != null) {
+          msg = data['message'].toString();
+        } else if (code == 403) {
+          msg =
+              'Эмчтэй чатлахын тулд цаг захиалах эсвэл чат хүсэлтээ зөвшөөрүүлэх шаардлагатай.';
+        }
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(msg)));
       setState(() {
         loadingMessages = false;
       });
@@ -1591,7 +1764,7 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
           ),
         ),
       );
-    } else if (doctors.isEmpty) {
+    } else if (doctors.isEmpty && lockedOutDoctor == null) {
       body = Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -1601,6 +1774,8 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
     } else {
       body = Column(
         children: [
+          if (lockedOutDoctor != null)
+            _buildLockedOutDoctorPanel(theme, cs),
           if (!isAuthed)
             Material(
               color: cs.primaryContainer.withValues(alpha: 0.55),
@@ -1624,62 +1799,65 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                 ),
               ),
             ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  selectLabel,
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
+          if (doctors.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    selectLabel,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Material(
-                  color: Colors.white.withValues(alpha: 0.92),
-                  borderRadius: BorderRadius.circular(16),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        isExpanded: true,
-                        value: selectedDoctor?['id']?.toString(),
-                        borderRadius: BorderRadius.circular(16),
-                        items: [
-                          for (final d in doctors)
-                            if (d['id'] != null)
-                              DropdownMenuItem<String>(
-                                value: d['id'].toString(),
-                                child: Text(() {
-                                  final key = _contactKeyForDoctor(
-                                    d,
-                                    isDoctorRole,
-                                  );
-                                  final unread = key == null
-                                      ? 0
-                                      : (unreadByContact[key] ?? 0);
-                                  final badge = unread > 0 ? ' ($unread)' : '';
-                                  return '${_doctorDisplayName(d)} · ${_contactSubtitle(d, isDoctorRole, l10n.localeName)}$badge';
-                                }(), overflow: TextOverflow.ellipsis),
-                              ),
-                        ],
-                        onChanged: (v) {
-                          if (v == null) return;
-                          for (final d in doctors) {
-                            if (d['id']?.toString() == v) {
-                              _selectDoctor(d);
-                              break;
+                  const SizedBox(height: 8),
+                  Material(
+                    color: Colors.white.withValues(alpha: 0.92),
+                    borderRadius: BorderRadius.circular(16),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          isExpanded: true,
+                          value: selectedDoctor?['id']?.toString(),
+                          borderRadius: BorderRadius.circular(16),
+                          items: [
+                            for (final d in doctors)
+                              if (d['id'] != null)
+                                DropdownMenuItem<String>(
+                                  value: d['id'].toString(),
+                                  child: Text(() {
+                                    final key = _contactKeyForDoctor(
+                                      d,
+                                      isDoctorRole,
+                                    );
+                                    final unread = key == null
+                                        ? 0
+                                        : (unreadByContact[key] ?? 0);
+                                    final badge =
+                                        unread > 0 ? ' ($unread)' : '';
+                                    return '${_doctorDisplayName(d)} · ${_contactSubtitle(d, isDoctorRole, l10n.localeName)}$badge';
+                                  }(), overflow: TextOverflow.ellipsis),
+                                ),
+                          ],
+                          onChanged: (v) {
+                            if (v == null) return;
+                            setState(() => lockedOutDoctor = null);
+                            for (final d in doctors) {
+                              if (d['id']?.toString() == v) {
+                                _selectDoctor(d);
+                                break;
+                              }
                             }
-                          }
-                        },
+                          },
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
           Expanded(
             child: loadingMessages
                 ? const Center(child: CircularProgressIndicator())

@@ -59,7 +59,15 @@ enum NotificationType {
   WAITLIST_MATCHED
   PAYMENT_REQUIRED
   JOB_APPLICATION_SUBMITTED
+  CHAT_REQUEST_RECEIVED
+  CHAT_REQUEST_ACCEPTED
   SYSTEM
+}
+
+enum DoctorChatRequestStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
 }
 
 enum AuthProvider {
@@ -131,6 +139,7 @@ model PatientProfile {
   user                  User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   appointments          Appointment[]
   medicalRecords        MedicalRecord[]
+  doctorChatRequests    DoctorChatRequest[]
 }
 
 model Branch {
@@ -210,6 +219,23 @@ model DoctorProfile {
   timeOffs         DoctorTimeOff[]
   appointments     Appointment[]
   medicalRecords   MedicalRecord[]
+  chatRequests     DoctorChatRequest[]
+}
+
+model DoctorChatRequest {
+  id          String                  @id @default(cuid())
+  patientId   String
+  doctorId    String
+  note        String?
+  status      DoctorChatRequestStatus @default(PENDING)
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+  respondedAt DateTime?
+  patient     PatientProfile          @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor      DoctorProfile           @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@index([doctorId, status, createdAt])
+  @@index([patientId, status, createdAt])
 }
 
 model DoctorService {

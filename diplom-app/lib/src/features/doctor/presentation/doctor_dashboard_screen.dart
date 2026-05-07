@@ -22,6 +22,7 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   late Future<Map<String, dynamic>> _future;
   final Set<String> _busyAppointmentIds = <String>{};
+  final Set<String> _busyChatRequestIds = <String>{};
 
   @override
   void initState() {
@@ -64,6 +65,44 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
     } finally {
       if (mounted) {
         setState(() => _busyAppointmentIds.remove(appointmentId));
+      }
+    }
+  }
+
+  Future<void> _resolveChatRequest({
+    required String requestId,
+    required bool accept,
+  }) async {
+    if (_busyChatRequestIds.contains(requestId)) return;
+    setState(() => _busyChatRequestIds.add(requestId));
+    try {
+      final api = ref.read(clinovaApiProvider);
+      if (accept) {
+        await api.acceptDoctorChatRequest(requestId);
+      } else {
+        await api.declineDoctorChatRequest(requestId);
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            accept ? 'Чат хүсэлт зөвшөөрөгдлөө.' : 'Чат хүсэлт татгалзлаа.',
+          ),
+        ),
+      );
+      await _refresh();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Чат хүсэлт шийдвэрлэхэд алдаа гарлаа. Дахин оролдоно уу.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _busyChatRequestIds.remove(requestId));
       }
     }
   }
@@ -225,6 +264,10 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
                   const <Map<String, dynamic>>[];
               final reminders =
                   (data['reminders'] as List?)?.cast<Map>() ?? const [];
+              final pendingChatRequests =
+                  (data['pendingChatRequests'] as List?)
+                      ?.cast<Map<String, dynamic>>() ??
+                  const <Map<String, dynamic>>[];
               final unreadReminderCount =
                   int.tryParse('${data['unreadReminderCount'] ?? 0}') ?? 0;
               final stats = [
@@ -321,6 +364,32 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
                         },
                       ),
                       const SizedBox(height: 20),
+                      if (pendingChatRequests.isNotEmpty)
+                        PremiumSectionCard(
+                          title: 'Хүлээгдэж буй чат хүсэлтүүд',
+                          icon: Icons.mark_chat_unread_rounded,
+                          child: Column(
+                            children: [
+                              for (final r in pendingChatRequests)
+                                _PendingChatRequestTile(
+                                  request: r,
+                                  busy: _busyChatRequestIds.contains(
+                                    r['id']?.toString() ?? '',
+                                  ),
+                                  onAccept: () => _resolveChatRequest(
+                                    requestId: r['id']?.toString() ?? '',
+                                    accept: true,
+                                  ),
+                                  onDecline: () => _resolveChatRequest(
+                                    requestId: r['id']?.toString() ?? '',
+                                    accept: false,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      if (pendingChatRequests.isNotEmpty)
+                        const SizedBox(height: 16),
                       PremiumSectionCard(
                         title: 'Өнөөдрийн цагууд',
                         icon: Icons.calendar_month_rounded,
@@ -586,6 +655,105 @@ class _AppointmentList extends StatelessWidget {
     final dt = DateTime.tryParse(raw);
     if (dt == null) return raw;
     return DateFormat('yyyy-MM-dd HH:mm').format(dt.toLocal());
+  }
+}
+
+class _PendingChatRequestTile extends StatelessWidget {
+  const _PendingChatRequestTile({
+    required this.request,
+    required this.busy,
+    required this.onAccept,
+    required this.onDecline,
+  });
+
+  final Map<String, dynamic> request;
+  final bool busy;
+  final VoidCallback onAccept;
+  final VoidCallback onDecline;
+
+  @override
+  Widget build(BuildContext context) {
+    final patient = request['patient'];
+    Map<String, dynamic>? pu;
+    if (patient is Map<String, dynamic>) {
+      pu = patient;
+    } else if (patient is Map) {
+      pu = Map<String, dynamic>.from(patient);
+    }
+    final user = pu?['user'];
+    Map<String, dynamic>? u;
+    if (user is Map<String, dynamic>) {
+      u = user;
+    } else if (user is Map) {
+      u = Map<String, dynamic>.from(user);
+    }
+    final name = u == null
+        ? 'Өвчтөн'
+        : '${u['firstName'] ?? ''} ${u['lastName'] ?? ''}'.trim();
+    final note = request['note']?.toString().trim() ?? '';
+    final created = request['createdAt']?.toString() ?? '';
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            name.isEmpty ? 'Өвчтөн' : name,
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 15,
+              color: Color(0xFF0F172A),
+            ),
+          ),
+          if (note.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              note,
+              style: const TextStyle(
+                color: Color(0xFF475569),
+                height: 1.35,
+              ),
+            ),
+          ],
+          if (created.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                created,
+                style: const TextStyle(
+                  color: Color(0xFF94A3B8),
+                  fontSize: 11,
+                ),
+              ),
+            ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: busy ? null : onDecline,
+                  child: Text(busy ? '...' : 'Татгалзах'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton(
+                  onPressed: busy ? null : onAccept,
+                  child: Text(busy ? '...' : 'Зөвшөөрөх'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
 

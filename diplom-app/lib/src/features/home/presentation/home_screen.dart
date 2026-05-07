@@ -131,6 +131,97 @@ void _goAppointments(BuildContext context, Map<String, String?> queryMap) {
   );
 }
 
+Future<void> _homeOpenDoctorChatFlow(
+  BuildContext context,
+  WidgetRef ref, {
+  required String doctorId,
+  required bool patientAuthed,
+  required Map<String, Map<String, dynamic>> chatPermissionByDoctor,
+}) async {
+  if (doctorId.isEmpty) return;
+  if (!patientAuthed) {
+    if (context.mounted) await context.push('/auth/login');
+    return;
+  }
+  final f = chatPermissionByDoctor[doctorId];
+  final canChat = f?['canChat'] == true;
+  final pending = f?['pendingRequest'] == true;
+  if (canChat) {
+    if (context.mounted) {
+      context.push(
+        '/doctor-chat?doctorId=${Uri.encodeComponent(doctorId)}',
+      );
+    }
+    return;
+  }
+  if (pending) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Таны чат хүсэлт хүлээгдэж байна.'),
+        ),
+      );
+    }
+    return;
+  }
+  final note = TextEditingController();
+  final submitted = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Чат хүсэлт илгээх'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Эмч танд зөвшөөрөл өгөх хүртэл шууд чат нээгдэхгүй.',
+            style: TextStyle(height: 1.35),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: note,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              labelText: 'Шалтгаан (заавал биш)',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('Болих'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('Илгээх'),
+        ),
+      ],
+    ),
+  );
+  if (submitted == true && context.mounted) {
+    try {
+      await ref.read(clinovaApiProvider).createDoctorChatRequest(
+            doctorProfileId: doctorId,
+            note: note.text.trim().isEmpty ? null : note.text.trim(),
+          );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Чат хүсэлт илгээгдлээ.')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$e')),
+        );
+      }
+    }
+  }
+  note.dispose();
+}
+
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
@@ -142,30 +233,46 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   final GlobalKey _doctorsSectionKey = GlobalKey();
 
   Future<List<dynamic>>? _homeBootstrapFuture;
-  String? _homeBootstrapDay;
-  bool? _homeBootstrapAuthed;
+  String? _homeBootstrapCacheKey;
 
   Future<List<dynamic>> _ensureHomeBootstrap({
     required String today,
     required bool isAuthed,
+    required String? userId,
+    required String? role,
   }) {
-    if (_homeBootstrapFuture != null &&
-        _homeBootstrapDay == today &&
-        _homeBootstrapAuthed == isAuthed) {
+    final cacheKey = '$today|$isAuthed|${role ?? ''}|${userId ?? ''}';
+    if (_homeBootstrapFuture != null && _homeBootstrapCacheKey == cacheKey) {
       return _homeBootstrapFuture!;
     }
-    _homeBootstrapDay = today;
-    _homeBootstrapAuthed = isAuthed;
+    _homeBootstrapCacheKey = cacheKey;
     final api = ref.read(clinovaApiProvider);
-    _homeBootstrapFuture = Future.wait<dynamic>([
-      isAuthed
-          ? api.getPatientDashboard()
-          : Future<Map<String, dynamic>>.value(const <String, dynamic>{}),
-      api.getAvailableSlots(date: today),
-      api.getDepartments(),
-      api.getBranches(),
-      api.getDoctors(),
-    ]);
+    _homeBootstrapFuture = () async {
+      final base = await Future.wait<dynamic>([
+        isAuthed && role == 'PATIENT'
+            ? api.getPatientDashboard()
+            : Future<Map<String, dynamic>>.value(const <String, dynamic>{}),
+        api.getAvailableSlots(date: today),
+        api.getDepartments(),
+        api.getBranches(),
+        api.getDoctors(),
+      ]);
+      Map<String, Map<String, dynamic>> flags = {};
+      if (isAuthed && role == 'PATIENT' && base.length > 4) {
+        final doctorsList = base[4] as List<Map<String, dynamic>>;
+        final ids = doctorsList
+            .take(16)
+            .map((d) => d['id']?.toString() ?? '')
+            .where((x) => x.isNotEmpty)
+            .toList();
+        if (ids.isNotEmpty) {
+          try {
+            flags = await api.getChatPermissionFlags(doctorIds: ids);
+          } catch (_) {}
+        }
+      }
+      return [...base, flags];
+    }();
     return _homeBootstrapFuture!;
   }
 
@@ -232,6 +339,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   future: _ensureHomeBootstrap(
                     today: today,
                     isAuthed: isAuthed,
+                    userId: user?.id,
+                    role: user?.role,
                   ),
                   builder: (context, snapshot) {
                     final dashboard =
@@ -253,6 +362,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         snapshot.hasData && snapshot.data!.length > 4
                         ? snapshot.data![4] as List<Map<String, dynamic>>
                         : const <Map<String, dynamic>>[];
+                    final chatPermissionByDoctor =
+                        snapshot.hasData && snapshot.data!.length > 5
+                        ? snapshot.data![5] as Map<String, Map<String, dynamic>>
+                        : const <String, Map<String, dynamic>>{};
+                    final myChatDoctorsRaw =
+                        (dashboard['myChatDoctors'] as List?)
+                            ?.cast<Map<String, dynamic>>() ??
+                        const <Map<String, dynamic>>[];
                     final entDeptId = _findDepartmentIdByKeywords(departments, [
                       'ent',
                     ]);
@@ -284,21 +401,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     final myDoctorsById = <String, Map<String, dynamic>>{};
                     final myDoctorStatus = <String, String>{};
                     if (isAuthed && user?.role == 'PATIENT') {
-                      final pastAp =
-                          (dashboard['appointmentHistory'] as List?)
-                              ?.cast<Map<String, dynamic>>() ??
-                          const <Map<String, dynamic>>[];
-                      for (final ap in [...upcomingAppointments, ...pastAp]) {
-                        final st = (ap['status'] ?? '')
-                            .toString()
-                            .toUpperCase();
-                        if (st == 'CANCELLED') continue;
-                        final doc = ap['doctor'];
-                        if (doc is! Map<String, dynamic>) continue;
-                        final did = doc['id']?.toString() ?? '';
-                        if (did.isEmpty) continue;
-                        myDoctorsById[did] = doc;
-                        myDoctorStatus[did] = ap['status']?.toString() ?? st;
+                      if (myChatDoctorsRaw.isNotEmpty) {
+                        for (final row in myChatDoctorsRaw) {
+                          final doc = row['doctor'];
+                          if (doc is! Map<String, dynamic>) continue;
+                          final did = doc['id']?.toString() ?? '';
+                          if (did.isEmpty) continue;
+                          myDoctorsById[did] = doc;
+                          myDoctorStatus[did] =
+                              row['appointmentStatusLabel']?.toString() ?? '—';
+                        }
+                      } else {
+                        final pastAp =
+                            (dashboard['appointmentHistory'] as List?)
+                                ?.cast<Map<String, dynamic>>() ??
+                            const <Map<String, dynamic>>[];
+                        for (final ap in [
+                          ...upcomingAppointments,
+                          ...pastAp,
+                        ]) {
+                          final st = (ap['status'] ?? '')
+                              .toString()
+                              .toUpperCase();
+                          if (st == 'CANCELLED') continue;
+                          final doc = ap['doctor'];
+                          if (doc is! Map<String, dynamic>) continue;
+                          final did = doc['id']?.toString() ?? '';
+                          if (did.isEmpty) continue;
+                          myDoctorsById[did] = doc;
+                          myDoctorStatus[did] =
+                              ap['status']?.toString() ?? st;
+                        }
                       }
                     }
 
@@ -474,6 +607,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                         doctors: doctorsList,
                                         onlineUserIds: onlineIds,
                                         todayDoctorIds: slotDoctorIds,
+                                        patientAuthed:
+                                            isAuthed && user?.role == 'PATIENT',
+                                        chatPermissionByDoctor:
+                                            chatPermissionByDoctor,
                                       ),
                                     ),
                                     const SizedBox(height: _HomeLayout.sectionGap),
@@ -1419,7 +1556,7 @@ class _MyDoctorsSection extends StatelessWidget {
                   child: OutlinedButton.icon(
                     onPressed: () => context.push('/doctor-profile/$docId'),
                     icon: const Icon(Icons.person_outline_rounded, size: 17),
-                    label: const Text('Профайл'),
+                    label: const Text('Профайл харах'),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       shape: RoundedRectangleBorder(
@@ -1435,7 +1572,7 @@ class _MyDoctorsSection extends StatelessWidget {
                       '/doctor-chat?doctorId=${Uri.encodeComponent(docId)}',
                     ),
                     icon: const Icon(Icons.chat_bubble_outline_rounded, size: 17),
-                    label: const Text('Чат'),
+                    label: const Text('Чатлах'),
                     style: FilledButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       shape: RoundedRectangleBorder(
@@ -1518,7 +1655,7 @@ class _MyDoctorsSection extends StatelessWidget {
   }
 }
 
-class _StaffPreviewSection extends StatelessWidget {
+class _StaffPreviewSection extends ConsumerWidget {
   const _StaffPreviewSection({
     super.key,
     required this.l10n,
@@ -1526,6 +1663,8 @@ class _StaffPreviewSection extends StatelessWidget {
     required this.doctors,
     required this.onlineUserIds,
     required this.todayDoctorIds,
+    required this.patientAuthed,
+    required this.chatPermissionByDoctor,
   });
 
   final AppLocalizations l10n;
@@ -1533,9 +1672,11 @@ class _StaffPreviewSection extends StatelessWidget {
   final List<Map<String, dynamic>> doctors;
   final Set<String> onlineUserIds;
   final Set<String> todayDoctorIds;
+  final bool patientAuthed;
+  final Map<String, Map<String, dynamic>> chatPermissionByDoctor;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     if (doctors.isEmpty) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1668,7 +1809,7 @@ class _StaffPreviewSection extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         SizedBox(
-          height: 150,
+          height: 234,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: preview.length,
@@ -1693,14 +1834,19 @@ class _StaffPreviewSection extends StatelessWidget {
               final ratingText = ratingVal is num
                   ? ratingVal.toStringAsFixed(1)
                   : '4.8';
-              return Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(18),
-                  onTap: docId.isEmpty
-                      ? null
-                      : () => context.push('/doctor-profile/$docId'),
-                  child: Container(
+              final perm = chatPermissionByDoctor[docId];
+              final canChat =
+                  patientAuthed && (perm?['canChat'] == true);
+              final pendingReq =
+                  patientAuthed && (perm?['pendingRequest'] == true);
+              final chatLabel = !patientAuthed
+                  ? 'Чат'
+                  : canChat
+                      ? 'Чатлах'
+                      : pendingReq
+                          ? 'Хүлээгдэж'
+                          : 'Чат хүсэлт';
+              return Container(
                     width: 206,
                     padding: const EdgeInsets.fromLTRB(12, 11, 10, 10),
                     decoration: BoxDecoration(
@@ -1718,7 +1864,7 @@ class _StaffPreviewSection extends StatelessWidget {
                       ],
                     ),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1790,35 +1936,21 @@ class _StaffPreviewSection extends StatelessWidget {
                                 ],
                               ),
                             ),
-                            IconButton(
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(
-                                minWidth: 36,
-                                minHeight: 36,
-                              ),
-                              tooltip: 'Чат',
-                              onPressed: docId.isEmpty
-                                  ? null
-                                  : () => context.push(
-                                      '/doctor-chat?doctorId=${Uri.encodeComponent(docId)}',
-                                    ),
-                              icon: Icon(
-                                Icons.chat_bubble_outline_rounded,
-                                color: cs.primary,
-                                size: 22,
-                              ),
-                            ),
                           ],
                         ),
                         const SizedBox(height: 8),
-                        Text(
-                          name.isEmpty ? '—' : name,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            height: 1.2,
+                        InkWell(
+                          onTap: docId.isEmpty
+                              ? null
+                              : () => context.push('/doctor-profile/$docId'),
+                          child: Text(
+                            name.isEmpty ? '—' : name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              height: 1.2,
+                            ),
                           ),
                         ),
                         if (dept.isNotEmpty)
@@ -1839,11 +1971,79 @@ class _StaffPreviewSection extends StatelessWidget {
                               color: cs.onSurfaceVariant,
                             ),
                           ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 4,
+                          runSpacing: 4,
+                          alignment: WrapAlignment.start,
+                          children: [
+                            TextButton(
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              onPressed: docId.isEmpty
+                                  ? null
+                                  : () => context.push(
+                                        '/doctor-profile/$docId',
+                                      ),
+                              child: const Text(
+                                'Профайл харах',
+                                style: TextStyle(fontSize: 11),
+                              ),
+                            ),
+                            TextButton(
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              onPressed: docId.isEmpty
+                                  ? null
+                                  : () => _goAppointments(context, {
+                                        'doctorId': docId,
+                                      }),
+                              child: const Text(
+                                'Цаг',
+                                style: TextStyle(fontSize: 11),
+                              ),
+                            ),
+                            FilledButton.tonal(
+                              style: FilledButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              onPressed: docId.isEmpty
+                                  ? null
+                                  : () => _homeOpenDoctorChatFlow(
+                                        context,
+                                        ref,
+                                        doctorId: docId,
+                                        patientAuthed: patientAuthed,
+                                        chatPermissionByDoctor:
+                                            chatPermissionByDoctor,
+                                      ),
+                              child: Text(
+                                chatLabel,
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
-                  ),
-                ),
-              );
+                  );
             },
           ),
         ),

@@ -11,6 +11,7 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { MessageType } from '@prisma/client';
 import { Server, Socket } from 'socket.io';
 import { ChatService } from '../chat/chat.service';
+import { ChatPermissionService } from '../chat/chat-permission.service';
 import { socketIoBrowserCorsOptions } from '../../common/cors-origins';
 
 @WebSocketGateway({
@@ -20,7 +21,10 @@ import { socketIoBrowserCorsOptions } from '../../common/cors-origins';
 export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly onlineUsers = new Map<string, string>();
 
-  constructor(private readonly chatService: ChatService) {}
+  constructor(
+    private readonly chatService: ChatService,
+    private readonly chatPermission: ChatPermissionService,
+  ) {}
 
   @WebSocketServer()
   server!: Server;
@@ -48,7 +52,10 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   }
 
   @SubscribeMessage('chat:join')
-  joinRoom(@ConnectedSocket() client: Socket, @MessageBody() data: { roomId: string }) {
+  async joinRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { roomId: string },
+  ) {
     if (!data?.roomId || !data.roomId.startsWith('room-')) {
       throw new BadRequestException('Invalid room id');
     }
@@ -56,6 +63,10 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     if (!userId) {
       throw new ForbiddenException('Unauthorized socket user');
     }
+    await this.chatPermission.assertMayAccessDoctorDmRoomForUserId(
+      userId,
+      data.roomId,
+    );
     client.join(data.roomId);
     return { ok: true, roomId: data.roomId };
   }
@@ -84,6 +95,10 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     if (!userId || userId !== data.senderId) {
       throw new ForbiddenException('Sender mismatch');
     }
+    await this.chatPermission.assertMayAccessDoctorDmRoomForUserId(
+      userId,
+      data.roomId,
+    );
     const messageType = data.messageType ?? MessageType.TEXT;
     const text = data.text?.trim() ?? '';
     if (messageType === MessageType.TEXT && text.length === 0) {
@@ -233,6 +248,21 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     if (did) {
       this.server.to(this.userRoomName(did)).emit('appointments:updated', appointment);
     }
+  }
+
+  emitChatRequestToDoctor(doctorUserId: string, payload: Record<string, unknown>) {
+    const id = doctorUserId.trim();
+    if (!id) return;
+    this.server.to(this.userRoomName(id)).emit('chat:request', payload);
+  }
+
+  emitChatRequestResolved(
+    patientUserId: string,
+    payload: Record<string, unknown>,
+  ) {
+    const id = patientUserId.trim();
+    if (!id) return;
+    this.server.to(this.userRoomName(id)).emit('chat:request:resolved', payload);
   }
 
   private getUserId(client: Socket) {

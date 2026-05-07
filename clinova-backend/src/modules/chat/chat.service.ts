@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { MessageType } from '@prisma/client';
+import { MessageType, Role } from '@prisma/client';
 import { PrismaService } from '../common/prisma.service';
+
+import { ChatPermissionService } from './chat-permission.service';
 
 export type ChatMessageInput = {
   roomId: string;
@@ -17,7 +19,36 @@ export type ChatMessageInput = {
 
 @Injectable()
 export class ChatService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly chatPermission: ChatPermissionService,
+  ) {}
+
+  async getRoomMessagesForUser(
+    roomId: string,
+    actorUserId: string,
+    actorRole: Role,
+  ) {
+    await this.chatPermission.assertMayAccessDoctorDmRoom({
+      actorUserId,
+      actorRole,
+      roomId,
+    });
+    return this.getRoomMessages(roomId);
+  }
+
+  async saveMessageGuarded(
+    actorUserId: string,
+    actorRole: Role,
+    input: ChatMessageInput,
+  ) {
+    await this.chatPermission.assertMayAccessDoctorDmRoom({
+      actorUserId,
+      actorRole,
+      roomId: input.roomId,
+    });
+    return this.saveMessage(input);
+  }
 
   async saveMessage(input: ChatMessageInput) {
     try {

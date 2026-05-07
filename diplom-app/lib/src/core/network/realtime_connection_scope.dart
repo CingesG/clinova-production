@@ -31,6 +31,8 @@ class _RealtimeConnectionScopeState
   StreamSubscription<Map<String, dynamic>>? _presenceSub;
   StreamSubscription<Map<String, dynamic>>? _apptBookSub;
   StreamSubscription<Map<String, dynamic>>? _apptUpdatedSub;
+  StreamSubscription<Map<String, dynamic>>? _chatRequestSub;
+  StreamSubscription<Map<String, dynamic>>? _chatRequestResolvedSub;
 
   @override
   void initState() {
@@ -46,6 +48,9 @@ class _RealtimeConnectionScopeState
     _apptUpdatedSub = rt.appointmentUpdatedStream.listen(
       _onAppointmentUpdated,
     );
+    _chatRequestSub = rt.chatRequestStream.listen(_onChatRequest);
+    _chatRequestResolvedSub =
+        rt.chatRequestResolvedStream.listen(_onChatRequestResolved);
   }
 
   void _onChatMessageToast(Map<String, dynamic> data) {
@@ -84,6 +89,14 @@ class _RealtimeConnectionScopeState
         'updated',
       ),
     );
+  }
+
+  void _onChatRequest(Map<String, dynamic> data) {
+    handleChatRequestIncomingToast(ref, data);
+  }
+
+  void _onChatRequestResolved(Map<String, dynamic> data) {
+    handleChatRequestResolvedToast(ref, data);
   }
 
   void _syncAuth(AuthState auth) {
@@ -144,6 +157,8 @@ class _RealtimeConnectionScopeState
     _presenceSub?.cancel();
     _apptBookSub?.cancel();
     _apptUpdatedSub?.cancel();
+    _chatRequestSub?.cancel();
+    _chatRequestResolvedSub?.cancel();
     super.dispose();
   }
 

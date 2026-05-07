@@ -16,8 +16,12 @@ import { BranchController } from './branch/branch.controller';
 import { BranchService } from './branch/branch.service';
 import { CatalogController } from './catalog/catalog.controller';
 import { CatalogService } from './catalog/catalog.service';
+import { ChatAccessController } from './chat/chat-access.controller';
 import { ChatController } from './chat/chat.controller';
+import { ChatPatientContactsService } from './chat/chat-patient-contacts.service';
+import { ChatPermissionService } from './chat/chat-permission.service';
 import { ChatService } from './chat/chat.service';
+import { DoctorChatRequestService } from './chat/doctor-chat-request.service';
 import { DashboardController } from './dashboard/dashboard.controller';
 import { DashboardService } from './dashboard/dashboard.service';
 import { DoctorController } from './doctor/doctor.controller';
@@ -72,6 +76,7 @@ import { UsersService } from './users/users.service';
     EmergencyController,
     AiAgentController,
     ChatController,
+    ChatAccessController,
     UsersController,
   ],
   providers: [
@@ -93,6 +98,9 @@ import { UsersService } from './users/users.service';
     EmergencyService,
     AiAgentService,
     AiHealthAgentService,
+    ChatPermissionService,
+    ChatPatientContactsService,
+    DoctorChatRequestService,
     ChatService,
     RealtimeGateway,
     UsersService,

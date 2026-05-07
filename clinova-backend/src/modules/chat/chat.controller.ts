@@ -46,7 +46,11 @@ export class ChatController {
     if (!roomId.startsWith('room-') || user.sub.trim().length === 0) {
       return [];
     }
-    return this.chatService.getRoomMessages(roomId);
+    return this.chatService.getRoomMessagesForUser(
+      roomId,
+      user.sub,
+      user.role,
+    );
   }
 
   @Post('messages')
@@ -57,7 +61,7 @@ export class ChatController {
     if (body.senderId !== user.sub) {
       throw new ForbiddenException('Sender mismatch');
     }
-    return this.chatService.saveMessage({
+    return this.chatService.saveMessageGuarded(user.sub, user.role, {
       roomId: body.roomId,
       senderId: body.senderId,
       receiverId: body.receiverId,

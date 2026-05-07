@@ -2,17 +2,19 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
-import { AppointmentStatus, Role } from '@prisma/client';
+import { AppointmentStatus, DoctorChatRequestStatus, Role } from '@prisma/client';
 
 import { PrismaService } from '../common/prisma.service';
-import { NotificationService } from '../notification/notification.service';
 import { USER_PUBLIC_SELECT } from '../common/user-public-select';
+import { ChatPatientContactsService } from '../chat/chat-patient-contacts.service';
+import { NotificationService } from '../notification/notification.service';
 
 @Injectable()
 export class DashboardService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationService,
+    private readonly chatPatientContacts: ChatPatientContactsService,
   ) {}
 
   private asNumber(value: unknown, fallback = 0) {
@@ -176,8 +178,13 @@ export class DashboardService {
     const todayEnd = new Date(todayStart);
     todayEnd.setDate(todayEnd.getDate() + 1);
 
-    const [todayAppointments, upcomingAppointments, patientCount, feedbackRows] =
-      await this.prisma.$transaction([
+    const [
+      todayAppointments,
+      upcomingAppointments,
+      patientCount,
+      feedbackRows,
+      pendingChatRequests,
+    ] = await this.prisma.$transaction([
         this.prisma.appointment.findMany({
           where: {
             doctorId: doctor.id,
@@ -230,6 +237,20 @@ export class DashboardService {
           },
           select: { data: true },
         }),
+        this.prisma.doctorChatRequest.findMany({
+          where: {
+            doctorId: doctor.id,
+            status: DoctorChatRequestStatus.PENDING,
+          },
+          orderBy: { createdAt: 'asc' },
+          include: {
+            patient: {
+              include: {
+                user: { select: USER_PUBLIC_SELECT },
+              },
+            },
+          },
+        }),
       ]);
 
     await this.ensureDoctorAppointmentReminders(userId, upcomingAppointments);
@@ -271,6 +292,7 @@ export class DashboardService {
       avgStars: Number(avgStars.toFixed(2)),
       avgCarePoints: Number(avgCarePoints.toFixed(2)),
       estimatedBonusMnt,
+      pendingChatRequests,
     };
   }
 
@@ -436,12 +458,16 @@ export class DashboardService {
       },
     });
 
+    const myChatDoctors =
+      await this.chatPatientContacts.buildMyChatDoctorsSummary(userId);
+
     return {
       upcomingAppointments,
       appointmentHistory,
       profileCompletion,
       medicalHistorySummary: patient.medicalHistorySummary ?? null,
       recentMedicalRecords,
+      myChatDoctors,
     };
   }
 }

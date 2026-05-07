@@ -127,3 +127,46 @@ Future<void> handleAppointmentRealtimeToast(
         ),
       );
 }
+
+void handleChatRequestIncomingToast(WidgetRef ref, Map<String, dynamic> data) {
+  final auth = ref.read(authControllerProvider);
+  if (auth.user?.role != 'DOCTOR' || !auth.isAuthenticated) return;
+  final name = data['patientName']?.toString().trim();
+  final body = name != null && name.isNotEmpty
+      ? '$name чат хүсэлт илгээлээ'
+      : 'Шинэ чат хүсэлт ирлээ';
+  if (clinovaTabVisible()) {
+    unawaited(clinovaPlaySoftRealtimeCue());
+  }
+  ref.read(clinovaRealtimeToastsProvider.notifier).push(
+        ClinovaToast(
+          id: 'chat-req-${data['requestId'] ?? DateTime.now().millisecondsSinceEpoch}',
+          title: 'Чат хүсэлт',
+          body: body,
+        ),
+      );
+}
+
+void handleChatRequestResolvedToast(
+  WidgetRef ref,
+  Map<String, dynamic> data,
+) {
+  final auth = ref.read(authControllerProvider);
+  if (auth.user?.role != 'PATIENT' || !auth.isAuthenticated) return;
+  final outcome = data['outcome']?.toString() ?? '';
+  if (outcome != 'ACCEPTED') return;
+  final doctorName = data['doctorName']?.toString().trim();
+  final body = doctorName != null && doctorName.isNotEmpty
+      ? '$doctorName таны хүсэлтийг зөвшөөрлөө'
+      : 'Эмч чат хүсэлтийг зөвшөөрлөө';
+  if (clinovaTabVisible()) {
+    unawaited(clinovaPlaySoftRealtimeCue());
+  }
+  ref.read(clinovaRealtimeToastsProvider.notifier).push(
+        ClinovaToast(
+          id: 'chat-acc-${data['requestId'] ?? DateTime.now().millisecondsSinceEpoch}',
+          title: 'Чат нээгдлээ',
+          body: body,
+        ),
+      );
+}

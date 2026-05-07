@@ -21,6 +21,7 @@ import {
   normalizeOptionalMongoliaPhone,
 } from '../common/mongolia-phone.util';
 import { USER_DETAIL_ADMIN_SAFE_SELECT } from '../common/user-public-select';
+import { ChatPermissionService } from '../chat/chat-permission.service';
 
 type DoctorInput = {
   username?: string;
@@ -67,7 +68,10 @@ type DoctorFeedbackInput = {
 
 @Injectable()
 export class DoctorService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly chatPermission: ChatPermissionService,
+  ) {}
 
   private coerceOptionalDoctorPhone(raw?: string | null): string | undefined {
     if (raw === undefined || raw === null || !String(raw).trim())
@@ -236,8 +240,15 @@ export class DoctorService {
       throw new ForbiddenException('Doctor profile not found for this user.');
     }
 
+    const allowedUserIds =
+      await this.chatPermission.listPatientUserIdsForDoctorChat(doctor.id);
+    if (allowedUserIds.length === 0) {
+      return [];
+    }
+
     const patients = await this.prisma.user.findMany({
       where: {
+        id: { in: allowedUserIds },
         role: Role.PATIENT,
         status: UserStatus.ACTIVE,
         patientProfile: { isNot: null },

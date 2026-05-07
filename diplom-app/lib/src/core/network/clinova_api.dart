@@ -200,6 +200,60 @@ class ClinovaApi {
     return _asList(response.data);
   }
 
+  /// Doctors the patient may DM (appointment or accepted chat request).
+  Future<List<Map<String, dynamic>>> getPatientAllowedChatDoctors() async {
+    final response = await _dio.get('/chat/patient-allowed-doctors');
+    return _normalizeTopLevelList(response.data);
+  }
+
+  Future<Map<String, Map<String, dynamic>>> getChatPermissionFlags({
+    required List<String> doctorIds,
+  }) async {
+    final response = await _dio.post(
+      '/chat/permission-flags',
+      data: {'doctorIds': doctorIds},
+    );
+    final raw = response.data;
+    if (raw is! Map) return {};
+    return raw.map(
+      (k, v) => MapEntry(
+        k.toString(),
+        v is Map
+            ? Map<String, dynamic>.from(v)
+            : <String, dynamic>{},
+      ),
+    );
+  }
+
+  Future<Map<String, dynamic>> createDoctorChatRequest({
+    required String doctorProfileId,
+    String? note,
+  }) async {
+    final response = await _dio.post(
+      '/chat/requests',
+      data: {
+        'doctorProfileId': doctorProfileId,
+        if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+      },
+    );
+    return _asMap(response.data);
+  }
+
+  Future<List<Map<String, dynamic>>> getDoctorChatRequestsIncoming() async {
+    final response = await _dio.get('/chat/requests/incoming');
+    return _normalizeTopLevelList(response.data);
+  }
+
+  Future<Map<String, dynamic>> acceptDoctorChatRequest(String requestId) async {
+    final response = await _dio.patch('/chat/requests/$requestId/accept');
+    return _asMap(response.data);
+  }
+
+  Future<Map<String, dynamic>> declineDoctorChatRequest(String requestId) async {
+    final response = await _dio.patch('/chat/requests/$requestId/decline');
+    return _asMap(response.data);
+  }
+
   /// GET bytes from an absolute or API-relative upload/chart URL.
   Future<Uint8List> downloadAttachmentBytes(String absoluteOrRelativeUrl) async {
     final u =

@@ -25,6 +25,10 @@ class RealtimeService {
       StreamController<Map<String, dynamic>>.broadcast();
   final StreamController<Map<String, dynamic>> _appointmentUpdatedStream =
       StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<Map<String, dynamic>> _chatRequestStream =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<Map<String, dynamic>> _chatRequestResolvedStream =
+      StreamController<Map<String, dynamic>>.broadcast();
 
   /// One broadcast stream for all `chat:message` events; filter by `roomId` in the listener.
   Stream<Map<String, dynamic>> get chatMessageStream => _chatStream.stream;
@@ -35,6 +39,10 @@ class RealtimeService {
       _appointmentBookedStream.stream;
   Stream<Map<String, dynamic>> get appointmentUpdatedStream =>
       _appointmentUpdatedStream.stream;
+  Stream<Map<String, dynamic>> get chatRequestStream =>
+      _chatRequestStream.stream;
+  Stream<Map<String, dynamic>> get chatRequestResolvedStream =>
+      _chatRequestResolvedStream.stream;
 
   void connect({String? userId}) {
     final normalizedUserId = (userId ?? '').trim();
@@ -68,6 +76,8 @@ class RealtimeService {
       ..off('presence:changed')
       ..off('appointments:booked')
       ..off('appointments:updated')
+      ..off('chat:request')
+      ..off('chat:request:resolved')
       ..on('chat:message', (data) {
         _chatStream.add(Map<String, dynamic>.from(data as Map));
       })
@@ -82,6 +92,12 @@ class RealtimeService {
       })
       ..on('appointments:updated', (data) {
         _appointmentUpdatedStream.add(Map<String, dynamic>.from(data as Map));
+      })
+      ..on('chat:request', (data) {
+        _chatRequestStream.add(Map<String, dynamic>.from(data as Map));
+      })
+      ..on('chat:request:resolved', (data) {
+        _chatRequestResolvedStream.add(Map<String, dynamic>.from(data as Map));
       })
       ..on('call:offer', (data) {
         _callSignalStream.add({'event': 'call:offer', ...Map<String, dynamic>.from(data as Map)});
@@ -204,5 +220,7 @@ class RealtimeService {
     _presenceStream.close();
     _appointmentBookedStream.close();
     _appointmentUpdatedStream.close();
+    _chatRequestStream.close();
+    _chatRequestResolvedStream.close();
   }
 }
