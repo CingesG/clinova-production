@@ -14,6 +14,83 @@ import '../../../core/widgets/clinova_logo.dart';
 import '../../auth/application/auth_controller.dart';
 import 'patient_desktop_nav_bar.dart';
 
+/// Shared layout rhythm for the patient home dashboard (centered ~1360).
+class _HomeLayout {
+  _HomeLayout._();
+
+  static const double sectionGap = 22;
+  static const double blockGap = 12;
+  static const double cardRadius = 18;
+
+  static BorderRadius get radiusCard => BorderRadius.circular(cardRadius);
+
+  static double paddingH(double screenWidth) {
+    if (screenWidth >= 1200) return 28;
+    if (screenWidth >= 900) return 22;
+    return 16;
+  }
+}
+
+class _HomePinnedNavDelegate extends SliverPersistentHeaderDelegate {
+  _HomePinnedNavDelegate({
+    required this.horizontalPadding,
+    required this.navBar,
+  });
+
+  final double horizontalPadding;
+  final Widget navBar;
+
+  static const double _extent = 78;
+
+  @override
+  double get minExtent => _extent;
+
+  @override
+  double get maxExtent => _extent;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    final surface = Theme.of(context).colorScheme.surface;
+    return Material(
+      color: surface.withValues(alpha: overlapsContent ? 0.96 : 0.86),
+      elevation: overlapsContent ? 1.5 : 0,
+      shadowColor: const Color(0x180F172A),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: overlapsContent
+              ? Border(
+                  bottom: BorderSide(
+                    color: const Color(0xFFE2E8F0).withValues(alpha: 0.95),
+                  ),
+                )
+              : null,
+        ),
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(horizontalPadding, 6, horizontalPadding, 6),
+          child: Align(
+            alignment: Alignment.center,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxWidth: PatientDesktopContainer.maxWidth,
+              ),
+              child: navBar,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _HomePinnedNavDelegate oldDelegate) =>
+      oldDelegate.horizontalPadding != horizontalPadding ||
+      oldDelegate.navBar != navBar;
+}
+
 String? _findDepartmentIdByKeywords(
   List<Map<String, dynamic>> departments,
   List<String> keywords,
@@ -225,32 +302,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       }
                     }
 
+                    final padH = _HomeLayout.paddingH(screenW);
+                    final nextAppointment = upcomingAppointments.isNotEmpty
+                        ? upcomingAppointments.first
+                        : null;
+
                     return CustomScrollView(
                       primary: true,
                       slivers: [
                         if (isDesktop)
-                          SliverToBoxAdapter(
-                            child: PatientDesktopContainer(
-                              child: Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  24,
-                                  20,
-                                  24,
-                                  0,
-                                ),
-                                child: PatientDesktopNavBar(
-                                  isAuthenticated: isAuthed,
-                                  onScrollToDoctors: _scrollToDoctors,
-                                ),
+                          SliverPersistentHeader(
+                            pinned: true,
+                            delegate: _HomePinnedNavDelegate(
+                              horizontalPadding: padH,
+                              navBar: PatientDesktopNavBar(
+                                isAuthenticated: isAuthed,
+                                onScrollToDoctors: _scrollToDoctors,
                               ),
                             ),
                           ),
                         SliverPadding(
                           padding: EdgeInsets.fromLTRB(
-                            isDesktop ? 32 : 20,
-                            isDesktop ? 16 : 12,
-                            isDesktop ? 32 : 20,
-                            showDockSpace ? 156 : (isDesktop ? 88 : 128),
+                            padH,
+                            isDesktop ? 8 : 8,
+                            padH,
+                            showDockSpace ? 152 : (isDesktop ? 72 : 112),
                           ),
                           sliver: SliverList.list(
                             children: [
@@ -259,87 +335,43 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   crossAxisAlignment:
                                       CrossAxisAlignment.stretch,
                                   children: [
-                                    Text(
-                                      l10n.homeTagline,
-                                      style:
-                                          (isDesktop
-                                                  ? theme
-                                                        .textTheme
-                                                        .headlineMedium
-                                                  : theme.textTheme.titleLarge)
-                                              ?.copyWith(
-                                                fontWeight: FontWeight.w800,
-                                                letterSpacing: -0.5,
-                                                color: const Color(0xFF102A43),
-                                              ),
-                                    ),
-                                    SizedBox(height: isDesktop ? 28 : 20),
                                     _HeroPanel(
                                       isWide: isDesktop,
                                       isAuthed: isAuthed,
                                       upcomingCount: upcomingAppointments.length
                                           .toString(),
                                       profileCompletion: '$profileCompletion%',
+                                      nextAppointment: nextAppointment,
                                       onBook: () =>
                                           context.push('/appointments/book'),
                                       onAi: () => context.push('/agent'),
                                     ),
-                                    const SizedBox(height: 18),
-                                    Wrap(
-                                      spacing: 10,
-                                      runSpacing: 10,
-                                      children: [
-                                        _FilterPill(
-                                          label: l10n.homeFilterEnt,
-                                          icon: Icons.hearing_rounded,
-                                          onTap: () => _goAppointments(
-                                            context,
-                                            entDeptId != null
-                                                ? {'departmentId': entDeptId}
-                                                : {},
-                                          ),
-                                        ),
-                                        _FilterPill(
-                                          label: l10n.homeFilterPediatrics,
-                                          icon: Icons.child_friendly_rounded,
-                                          onTap: () => _goAppointments(
-                                            context,
-                                            pedDeptId != null
-                                                ? {'departmentId': pedDeptId}
-                                                : {},
-                                          ),
-                                        ),
-                                        _FilterPill(
-                                          label: l10n.homeFilterDermatology,
-                                          icon: Icons.spa_rounded,
-                                          onTap: () => _goAppointments(
-                                            context,
-                                            dermDeptId != null
-                                                ? {'departmentId': dermDeptId}
-                                                : {},
-                                          ),
-                                        ),
-                                        _FilterPill(
-                                          label: l10n.homeFilterWomensCare,
-                                          icon: Icons.favorite_rounded,
-                                          onTap: () => _goAppointments(
-                                            context,
-                                            gynDeptId != null
-                                                ? {'departmentId': gynDeptId}
-                                                : {},
-                                          ),
-                                        ),
-                                      ],
+                                    const SizedBox(height: _HomeLayout.blockGap),
+                                    RepaintBoundary(
+                                      child: _HomeQuickActions(
+                                        screenWidth: screenW,
+                                        l10n: l10n,
+                                        theme: theme,
+                                      ),
                                     ),
-                                    const SizedBox(height: 22),
+                                    const SizedBox(height: _HomeLayout.sectionGap),
+                                    _HomeDepartmentStrip(
+                                      l10n: l10n,
+                                      entDeptId: entDeptId,
+                                      pedDeptId: pedDeptId,
+                                      dermDeptId: dermDeptId,
+                                      gynDeptId: gynDeptId,
+                                    ),
+                                    const SizedBox(height: _HomeLayout.sectionGap),
                                     if (isAuthed && user?.role == 'PATIENT')
                                       _PatientHealthSection(
                                         l10n: l10n,
                                         theme: theme,
                                         dashboard: dashboard,
+                                        profileCompletionRaw: profileCompletion,
                                       ),
                                     if (isAuthed && user?.role == 'PATIENT')
-                                      const SizedBox(height: 20),
+                                      const SizedBox(height: _HomeLayout.sectionGap),
                                     if (isAuthed &&
                                         user?.role == 'PATIENT' &&
                                         myDoctorsById.isNotEmpty)
@@ -352,46 +384,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                     if (isAuthed &&
                                         user?.role == 'PATIENT' &&
                                         myDoctorsById.isNotEmpty)
-                                      const SizedBox(height: 20),
+                                      const SizedBox(height: _HomeLayout.sectionGap),
                                     RepaintBoundary(
-                                      child: _StaffPreviewSection(
-                                        key: _doctorsSectionKey,
+                                      child: _HomeAiPromoSection(
                                         l10n: l10n,
                                         theme: theme,
-                                        doctors: doctorsList,
-                                        onlineUserIds: onlineIds,
-                                        todayDoctorIds: slotDoctorIds,
                                       ),
                                     ),
-                                    const SizedBox(height: 20),
-                                    RepaintBoundary(
-                                      child: _BranchesPreviewSection(
-                                        l10n: l10n,
-                                        theme: theme,
-                                        branches: branchesList,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 26),
+                                    const SizedBox(height: _HomeLayout.sectionGap),
                                     _SectionHeader(
                                       title: l10n.homeTodayTitle,
                                       subtitle: l10n.homeTodaySubtitle,
                                     ),
-                                    const SizedBox(height: 14),
+                                    const SizedBox(height: _HomeLayout.blockGap),
                                     if (snapshot.connectionState ==
                                         ConnectionState.waiting)
                                       const Center(
-                                        child: CircularProgressIndicator(),
+                                        child: Padding(
+                                          padding: EdgeInsets.all(20),
+                                          child: CircularProgressIndicator(),
+                                        ),
                                       )
                                     else if (slots.isEmpty)
                                       Container(
-                                        padding: const EdgeInsets.all(18),
+                                        padding: const EdgeInsets.all(16),
                                         decoration: BoxDecoration(
                                           color: Colors.white.withValues(
                                             alpha: 0.92,
                                           ),
-                                          borderRadius: BorderRadius.circular(
-                                            22,
-                                          ),
+                                          borderRadius: _HomeLayout.radiusCard,
                                           border: Border.all(
                                             color: const Color(0xFFE2E8F0),
                                           ),
@@ -412,7 +433,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                         );
                                         return Padding(
                                           padding: const EdgeInsets.only(
-                                            bottom: 12,
+                                            bottom: 10,
                                           ),
                                           child: _AvailabilityCard(
                                             doctor:
@@ -444,6 +465,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                           ),
                                         );
                                       }),
+                                    const SizedBox(height: _HomeLayout.sectionGap),
+                                    RepaintBoundary(
+                                      child: _StaffPreviewSection(
+                                        key: _doctorsSectionKey,
+                                        l10n: l10n,
+                                        theme: theme,
+                                        doctors: doctorsList,
+                                        onlineUserIds: onlineIds,
+                                        todayDoctorIds: slotDoctorIds,
+                                      ),
+                                    ),
+                                    const SizedBox(height: _HomeLayout.sectionGap),
+                                    RepaintBoundary(
+                                      child: _BranchesPreviewSection(
+                                        l10n: l10n,
+                                        theme: theme,
+                                        branches: branchesList,
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),
@@ -462,6 +502,372 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   child: const _HomeAiAgentFab(),
                 ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeQuickActions extends StatelessWidget {
+  const _HomeQuickActions({
+    required this.screenWidth,
+    required this.l10n,
+    required this.theme,
+  });
+
+  final double screenWidth;
+  final AppLocalizations l10n;
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = <_QuickActionSpec>[
+      _QuickActionSpec(
+        icon: Icons.calendar_month_rounded,
+        title: l10n.homeBookNow,
+        subtitle: l10n.homeCardBookVisitSubtitle,
+        accent: const Color(0xFF0D9488),
+        onTap: () => context.push('/appointments/book'),
+      ),
+      _QuickActionSpec(
+        icon: Icons.chat_bubble_outline_rounded,
+        title: l10n.homeCardLiveChatTitle,
+        subtitle: l10n.homeCardLiveChatSubtitle,
+        accent: const Color(0xFF1769FF),
+        onTap: () => context.push('/chat-landing'),
+      ),
+      _QuickActionSpec(
+        icon: Icons.auto_awesome_rounded,
+        title: l10n.homeHeroSecondaryCta,
+        subtitle: l10n.homeCardAskAiSubtitle,
+        accent: const Color(0xFF7C3AED),
+        onTap: () => context.push('/agent'),
+      ),
+      _QuickActionSpec(
+        icon: Icons.health_and_safety_rounded,
+        title: l10n.welcomeFeatureEmergency,
+        subtitle: l10n.emergencyIntakeSubtitle,
+        accent: const Color(0xFFDC2626),
+        onTap: () => context.push('/emergency'),
+      ),
+    ];
+
+    final isDesktop = screenWidth >= 900;
+    final useHScroll = screenWidth < 600;
+
+    Widget card(_QuickActionSpec s) {
+      return _QuickActionCard(spec: s, theme: theme);
+    }
+
+    if (useHScroll) {
+      return SizedBox(
+        height: 118,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: items.length,
+          separatorBuilder: (context, index) => const SizedBox(width: 10),
+          itemBuilder: (context, i) => SizedBox(
+            width: 168,
+            child: card(items[i]),
+          ),
+        ),
+      );
+    }
+
+    if (isDesktop) {
+      return Row(
+        children: [
+          for (var i = 0; i < items.length; i++) ...[
+            if (i > 0) const SizedBox(width: 12),
+            Expanded(child: card(items[i])),
+          ],
+        ],
+      );
+    }
+
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: 12,
+      crossAxisSpacing: 12,
+      childAspectRatio: 2.15,
+      children: items.map(card).toList(),
+    );
+  }
+}
+
+class _QuickActionSpec {
+  const _QuickActionSpec({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.accent,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color accent;
+  final VoidCallback onTap;
+}
+
+class _QuickActionCard extends StatelessWidget {
+  const _QuickActionCard({required this.spec, required this.theme});
+
+  final _QuickActionSpec spec;
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white.withValues(alpha: 0.94),
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: _HomeLayout.radiusCard),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: spec.onTap,
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: _HomeLayout.radiusCard,
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x080F172A),
+                blurRadius: 12,
+                offset: Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: spec.accent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(spec.icon, color: spec.accent, size: 24),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        spec.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF102A43),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        spec.subtitle,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          height: 1.25,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  size: 14,
+                  color: theme.colorScheme.onSurfaceVariant.withValues(
+                    alpha: 0.55,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeDepartmentStrip extends StatelessWidget {
+  const _HomeDepartmentStrip({
+    required this.l10n,
+    required this.entDeptId,
+    required this.pedDeptId,
+    required this.dermDeptId,
+    required this.gynDeptId,
+  });
+
+  final AppLocalizations l10n;
+  final String? entDeptId;
+  final String? pedDeptId;
+  final String? dermDeptId;
+  final String? gynDeptId;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          l10n.homeMoveFasterTitle,
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: const Color(0xFF102A43),
+              ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          l10n.homeMoveFasterSubtitle,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 44,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: [
+              _FilterPill(
+                label: l10n.homeFilterEnt,
+                icon: Icons.hearing_rounded,
+                onTap: () => _goAppointments(
+                  context,
+                  entDeptId != null ? {'departmentId': entDeptId!} : {},
+                ),
+              ),
+              const SizedBox(width: 8),
+              _FilterPill(
+                label: l10n.homeFilterPediatrics,
+                icon: Icons.child_friendly_rounded,
+                onTap: () => _goAppointments(
+                  context,
+                  pedDeptId != null ? {'departmentId': pedDeptId!} : {},
+                ),
+              ),
+              const SizedBox(width: 8),
+              _FilterPill(
+                label: l10n.homeFilterDermatology,
+                icon: Icons.spa_rounded,
+                onTap: () => _goAppointments(
+                  context,
+                  dermDeptId != null ? {'departmentId': dermDeptId!} : {},
+                ),
+              ),
+              const SizedBox(width: 8),
+              _FilterPill(
+                label: l10n.homeFilterWomensCare,
+                icon: Icons.favorite_rounded,
+                onTap: () => _goAppointments(
+                  context,
+                  gynDeptId != null ? {'departmentId': gynDeptId!} : {},
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _HomeAiPromoSection extends StatelessWidget {
+  const _HomeAiPromoSection({required this.l10n, required this.theme});
+
+  final AppLocalizations l10n;
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => context.push('/agent'),
+        borderRadius: _HomeLayout.radiusCard,
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: _HomeLayout.radiusCard,
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF071B4D), Color(0xFF1769FF)],
+              stops: [0.0, 1.0],
+            ),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x140F172A),
+                blurRadius: 16,
+                offset: Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(
+                    Icons.auto_awesome_rounded,
+                    color: Colors.white,
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        l10n.homeCardAskAiTitle,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        l10n.homeCardAskAiSubtitle,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: Colors.white.withValues(alpha: 0.88),
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                FilledButton(
+                  onPressed: () => context.push('/agent'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: const Color(0xFF1769FF),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: Text(l10n.homeAskAi),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -519,11 +925,27 @@ class _PatientHealthSection extends StatelessWidget {
     required this.l10n,
     required this.theme,
     required this.dashboard,
+    required this.profileCompletionRaw,
   });
 
   final AppLocalizations l10n;
   final ThemeData theme;
   final Map<String, dynamic> dashboard;
+  final String profileCompletionRaw;
+
+  static String _visitOneLiner(Map<String, dynamic> ap) {
+    final svc = ap['service']?['name']?.toString() ?? '';
+    final dt = ap['startsAt']?.toString() ?? '';
+    final st = DateTime.tryParse(dt);
+    final when = st != null ? DateFormat.yMMMd().format(st) : dt;
+    final dname = _appointmentDoctorName(ap);
+    final bits = <String>[
+      if (when.isNotEmpty) when,
+      if (svc.isNotEmpty) svc,
+      if (dname.isNotEmpty) dname,
+    ];
+    return bits.join(' · ');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -548,158 +970,339 @@ class _PatientHealthSection extends StatelessWidget {
         past.isNotEmpty ||
         upcoming.isNotEmpty;
 
-    Widget visitLine(Map<String, dynamic> ap) {
-      final svc = ap['service']?['name']?.toString() ?? '';
-      final dt = ap['startsAt']?.toString() ?? '';
-      final st = DateTime.tryParse(dt);
-      final when = st != null ? DateFormat.yMMMd().format(st) : dt;
-      final dname = _appointmentDoctorName(ap);
-      final bits = <String>[
-        if (when.isNotEmpty) when,
-        if (svc.isNotEmpty) svc,
-        if (dname.isNotEmpty) dname,
-      ];
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: Row(
+    final profilePct = int.tryParse(
+          profileCompletionRaw.replaceAll('%', '').trim(),
+        )?.clamp(0, 100) ??
+        0;
+
+    final lastLine =
+        past.isNotEmpty ? _visitOneLiner(past.first) : '';
+    final nextLine =
+        upcoming.isNotEmpty ? _visitOneLiner(upcoming.first) : '';
+
+    Widget miniCard({
+      required IconData icon,
+      required String title,
+      required String body,
+      Color? iconColor,
+      Widget? footer,
+    }) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: cs.surface.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('• ', style: theme.textTheme.bodySmall),
-            Expanded(
-              child: Text(bits.join(' · '), style: theme.textTheme.bodySmall),
+            Row(
+              children: [
+                Icon(icon, size: 20, color: iconColor ?? cs.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
             ),
+            const SizedBox(height: 8),
+            Text(
+              body.isEmpty ? '—' : body,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(height: 1.35),
+            ),
+            if (footer != null) ...[const SizedBox(height: 8), footer],
           ],
         ),
       );
     }
 
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x080F172A),
-            blurRadius: 16,
-            offset: Offset(0, 8),
+    return LayoutBuilder(
+      builder: (context, c) {
+        final wide = c.maxWidth >= 720;
+        final grid = <Widget>[
+          miniCard(
+            icon: Icons.history_rounded,
+            title: l10n.homePastVisitsTitle,
+            body: lastLine,
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.favorite_rounded, color: cs.primary),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  l10n.homeYourCareTitle,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ],
+          miniCard(
+            icon: Icons.event_available_rounded,
+            title: l10n.homeMetricUpcoming,
+            body: nextLine,
           ),
-          const SizedBox(height: 6),
-          Text(l10n.homeYourCareSubtitle, style: theme.textTheme.bodySmall),
-          if (summary != null && summary.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text(
-              l10n.homeMedicalNoteTitle,
-              style: theme.textTheme.labelLarge?.copyWith(
-                fontWeight: FontWeight.w700,
+          miniCard(
+            icon: Icons.person_outline_rounded,
+            title: l10n.homeMetricProfile,
+            body: '$profilePct%',
+            footer: ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value: profilePct / 100,
+                minHeight: 6,
+                backgroundColor: cs.surfaceContainerHighest,
+                color: cs.primary,
               ),
             ),
-            const SizedBox(height: 4),
-            Text(summary, style: theme.textTheme.bodyMedium),
-          ],
-          if (upcoming.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            Text(
-              l10n.homeMetricUpcoming,
-              style: theme.textTheme.labelLarge?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 6),
-            ...upcoming.take(4).map(visitLine),
-          ],
-          if (records.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            Text(
-              l10n.homeRecentRecordsTitle,
-              style: theme.textTheme.labelLarge?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 8),
-            ...records.take(4).map((r) {
-              final dx = r['diagnosis']?.toString() ?? '';
-              final sx = r['symptoms']?.toString() ?? '';
-              final line = [dx, sx].where((e) => e.isNotEmpty).join(' · ');
-              final du = r['doctor']?['user'];
-              final dname = du is Map<String, dynamic> ? _userFullName(du) : '';
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
+          ),
+          Material(
+            color: cs.primary.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(14),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: () => context.push('/chat-landing'),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      Icons.description_outlined,
-                      size: 18,
-                      color: cs.primary,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            line.isEmpty ? '—' : line,
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                          if (dname.isNotEmpty)
-                            Text(
-                              dname,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: cs.onSurfaceVariant,
-                              ),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.chat_bubble_outline_rounded,
+                          size: 20,
+                          color: cs.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            l10n.homeCardLiveChatTitle,
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
                             ),
-                        ],
+                          ),
+                        ),
+                        Icon(
+                          Icons.arrow_forward_rounded,
+                          size: 18,
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      l10n.homeCardLiveChatSubtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                        height: 1.35,
                       ),
                     ),
                   ],
                 ),
-              );
-            }),
-          ],
-          if (past.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            Text(
-              l10n.homePastVisitsTitle,
-              style: theme.textTheme.labelLarge?.copyWith(
-                fontWeight: FontWeight.w700,
               ),
             ),
-            const SizedBox(height: 6),
-            ...past.take(4).map(visitLine),
-          ],
-          if (!hasContent)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                l10n.homeNoHealthDataYet,
+          ),
+        ];
+
+        final topGrid = wide
+            ? Column(
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: grid[0]),
+                      const SizedBox(width: 12),
+                      Expanded(child: grid[1]),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: grid[2]),
+                      const SizedBox(width: 12),
+                      Expanded(child: grid[3]),
+                    ],
+                  ),
+                ],
+              )
+            : Column(
+                children: [
+                  for (var i = 0; i < grid.length; i++) ...[
+                    if (i > 0) const SizedBox(height: 10),
+                    grid[i],
+                  ],
+                ],
+              );
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.92),
+            borderRadius: _HomeLayout.radiusCard,
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x080F172A),
+                blurRadius: 14,
+                offset: Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.favorite_rounded, color: cs.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      l10n.homeYourCareTitle,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                l10n.homeYourCareSubtitle,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: cs.onSurfaceVariant,
                 ),
               ),
-            ),
-        ],
-      ),
+              const SizedBox(height: 14),
+              topGrid,
+              const SizedBox(height: 12),
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () => context.push('/agent'),
+                  borderRadius: BorderRadius.circular(14),
+                  child: Ink(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFF1769FF).withValues(alpha: 0.35)),
+                      color: const Color(0xFF1769FF).withValues(alpha: 0.06),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.auto_awesome_rounded,
+                          color: Color(0xFF1769FF),
+                          size: 22,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                l10n.homeCardAskAiTitle,
+                                style: theme.textTheme.labelLarge?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              Text(
+                                l10n.homeCardAskAiSubtitle,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: cs.onSurfaceVariant,
+                                  height: 1.3,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(Icons.chevron_right_rounded, color: cs.primary),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              if (summary != null && summary.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  l10n.homeMedicalNoteTitle,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  summary,
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(height: 1.4),
+                ),
+              ],
+              if (records.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  l10n.homeRecentRecordsTitle,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                ...records.take(2).map((r) {
+                  final dx = r['diagnosis']?.toString() ?? '';
+                  final sx = r['symptoms']?.toString() ?? '';
+                  final line = [dx, sx].where((e) => e.isNotEmpty).join(' · ');
+                  final du = r['doctor']?['user'];
+                  final dname =
+                      du is Map<String, dynamic> ? _userFullName(du) : '';
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.description_outlined,
+                          size: 18,
+                          color: cs.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                line.isEmpty ? '—' : line,
+                                style: theme.textTheme.bodySmall,
+                              ),
+                              if (dname.isNotEmpty)
+                                Text(
+                                  dname,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: cs.onSurfaceVariant,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              ],
+              if (!hasContent)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    l10n.homeNoHealthDataYet,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -721,6 +1324,133 @@ class _MyDoctorsSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = theme.colorScheme;
     final entries = doctorsById.entries.toList();
+
+    Widget doctorCard(int i) {
+      final e = entries[i];
+      final docId = e.key;
+      final d = e.value;
+      final u = d['user'] as Map<String, dynamic>?;
+      final name = _userFullName(u);
+      final dept = d['department']?['name']?.toString() ?? '';
+      final initial = name.isNotEmpty
+          ? String.fromCharCode(name.runes.first).toUpperCase()
+          : '?';
+      final gender = doctorGenderFromMap(u);
+      final st = statusById[docId] ?? '—';
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.94),
+          borderRadius: _HomeLayout.radiusCard,
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x100F172A),
+              blurRadius: 12,
+              offset: Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            InkWell(
+              onTap: () => context.push('/doctor-profile/$docId'),
+              borderRadius: BorderRadius.circular(14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _DoctorAvatar(
+                    doctorName: name,
+                    initial: initial,
+                    gender: gender,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name.isEmpty ? '—' : name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            height: 1.2,
+                          ),
+                        ),
+                        if (dept.isNotEmpty)
+                          Text(
+                            dept,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: cs.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  st,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: cs.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+            const Spacer(),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => context.push('/doctor-profile/$docId'),
+                    icon: const Icon(Icons.person_outline_rounded, size: 17),
+                    label: const Text('Профайл'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () => context.push(
+                      '/doctor-chat?doctorId=${Uri.encodeComponent(docId)}',
+                    ),
+                    icon: const Icon(Icons.chat_bubble_outline_rounded, size: 17),
+                    label: const Text('Чат'),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -731,159 +1461,57 @@ class _MyDoctorsSection extends StatelessWidget {
             Expanded(
               child: Text(
                 'Миний эмч нар',
-                style: theme.textTheme.titleLarge?.copyWith(
+                style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w800,
                 ),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 4),
         Text(
           'Таны захиалсан үзлэгүүдийн эмч нар',
-          style: theme.textTheme.bodyMedium?.copyWith(
+          style: theme.textTheme.bodySmall?.copyWith(
             color: cs.onSurfaceVariant,
           ),
         ),
         const SizedBox(height: 12),
-        SizedBox(
-          height: 212,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: entries.length,
-            separatorBuilder: (context, _) => const SizedBox(width: 12),
-            itemBuilder: (context, i) {
-              final e = entries[i];
-              final docId = e.key;
-              final d = e.value;
-              final u = d['user'] as Map<String, dynamic>?;
-              final name = _userFullName(u);
-              final dept = d['department']?['name']?.toString() ?? '';
-              final initial = name.isNotEmpty
-                  ? String.fromCharCode(name.runes.first).toUpperCase()
-                  : '?';
-              final gender = doctorGenderFromMap(u);
-              final st = statusById[docId] ?? '—';
-              return Container(
-                width: 238,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.94),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.85),
+        LayoutBuilder(
+          builder: (context, c) {
+            final w = c.maxWidth;
+            if (w < 560) {
+              return SizedBox(
+                height: 202,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: entries.length,
+                  separatorBuilder: (context, index) => const SizedBox(width: 10),
+                  itemBuilder: (context, i) => SizedBox(
+                    width: 268,
+                    child: doctorCard(i),
                   ),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x100F172A),
-                      blurRadius: 14,
-                      offset: Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: InkWell(
-                            onTap: () => context.push('/doctor-profile/$docId'),
-                            borderRadius: BorderRadius.circular(16),
-                            child: Row(
-                              children: [
-                                _DoctorAvatar(
-                                  doctorName: name,
-                                  initial: initial,
-                                  gender: gender,
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        name.isEmpty ? '—' : name,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: theme.textTheme.titleSmall
-                                            ?.copyWith(
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                      ),
-                                      if (dept.isNotEmpty)
-                                        Text(
-                                          dept,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: theme.textTheme.bodySmall
-                                              ?.copyWith(
-                                                color: cs.onSurfaceVariant,
-                                              ),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: cs.primary.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        st,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: cs.primary,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    const Spacer(),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () =>
-                                context.push('/doctor-profile/$docId'),
-                            icon: const Icon(
-                              Icons.person_outline_rounded,
-                              size: 18,
-                            ),
-                            label: const Text('Профайл'),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: FilledButton.icon(
-                            onPressed: () => context.push(
-                              '/doctor-chat?doctorId=${Uri.encodeComponent(docId)}',
-                            ),
-                            icon: const Icon(
-                              Icons.chat_bubble_outline_rounded,
-                              size: 18,
-                            ),
-                            label: const Text('Чат'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
                 ),
               );
-            },
-          ),
+            }
+            var cross = 2;
+            if (w >= 1200) {
+              cross = 4;
+            } else if (w >= 900) {
+              cross = 3;
+            }
+            return GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: cross,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                mainAxisExtent: 202,
+              ),
+              itemCount: entries.length,
+              itemBuilder: (context, i) => doctorCard(i),
+            );
+          },
         ),
       ],
     );
@@ -937,49 +1565,80 @@ class _StaffPreviewSection extends StatelessWidget {
 
     final cs = theme.colorScheme;
     final preview = doctors.length > 12 ? doctors.sublist(0, 12) : doctors;
+    final sw = MediaQuery.sizeOf(context).width;
+    final bannerH = sw >= 900 ? 290.0 : (sw >= 600 ? 238.0 : 198.0);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(l10n.homeStaffTitle, style: theme.textTheme.titleLarge),
+        Text(
+          l10n.homeStaffTitle,
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
+        ),
         const SizedBox(height: 4),
-        Text(l10n.homeStaffSubtitle, style: theme.textTheme.bodyMedium),
-        const SizedBox(height: 12),
+        Text(
+          l10n.homeStaffSubtitle,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: cs.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 10),
         Container(
           width: double.infinity,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: _HomeLayout.radiusCard,
             border: Border.all(color: Colors.white.withValues(alpha: 0.85)),
             boxShadow: const [
               BoxShadow(
                 color: Color(0x120F172A),
-                blurRadius: 16,
-                offset: Offset(0, 8),
+                blurRadius: 14,
+                offset: Offset(0, 6),
               ),
             ],
           ),
           clipBehavior: Clip.antiAlias,
           child: RepaintBoundary(
             child: Stack(
+              clipBehavior: Clip.none,
               children: [
-                AspectRatio(
-                  aspectRatio: 16 / 9,
-                  child: Image.asset(
-                    'assets/images/clinova_team_card.jpg',
-                    fit: BoxFit.cover,
-                    alignment: Alignment.topCenter,
-                    cacheWidth: 1000,
-                    cacheHeight: 562,
-                    gaplessPlayback: true,
-                    errorBuilder: (context, error, stackTrace) => Container(
-                      color: const Color(0xFF0D3B66),
-                      alignment: Alignment.center,
-                      child: Icon(
-                        Icons.groups_rounded,
-                        size: 64,
-                        color: Colors.white.withValues(alpha: 0.9),
+                SizedBox(
+                  height: bannerH,
+                  width: double.infinity,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Image.asset(
+                        'assets/images/clinova_team_card.jpg',
+                        fit: BoxFit.cover,
+                        alignment: const Alignment(0, -0.25),
+                        cacheWidth: 1200,
+                        cacheHeight: 500,
+                        gaplessPlayback: true,
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          color: const Color(0xFF0D3B66),
+                          alignment: Alignment.center,
+                          child: Icon(
+                            Icons.groups_rounded,
+                            size: 56,
+                            color: Colors.white.withValues(alpha: 0.9),
+                          ),
+                        ),
                       ),
-                    ),
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.black.withValues(alpha: 0.02),
+                              Colors.black.withValues(alpha: 0.52),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 Positioned(
@@ -1007,13 +1666,13 @@ class _StaffPreviewSection extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 12),
         SizedBox(
-          height: 156,
+          height: 150,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: preview.length,
-            separatorBuilder: (context, i) => const SizedBox(width: 12),
+            separatorBuilder: (context, i) => const SizedBox(width: 10),
             itemBuilder: (context, i) {
               final d = preview[i];
               final docId = d['id']?.toString() ?? '';
@@ -1037,24 +1696,24 @@ class _StaffPreviewSection extends StatelessWidget {
               return Material(
                 color: Colors.transparent,
                 child: InkWell(
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius: BorderRadius.circular(18),
                   onTap: docId.isEmpty
                       ? null
                       : () => context.push('/doctor-profile/$docId'),
                   child: Container(
-                    width: 220,
-                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+                    width: 206,
+                    padding: const EdgeInsets.fromLTRB(12, 11, 10, 10),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.92),
-                      borderRadius: BorderRadius.circular(24),
+                      borderRadius: BorderRadius.circular(18),
                       border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.85),
+                        color: const Color(0xFFE2E8F0),
                       ),
                       boxShadow: const [
                         BoxShadow(
-                          color: Color(0x100F172A),
-                          blurRadius: 14,
-                          offset: Offset(0, 8),
+                          color: Color(0x0F0F172A),
+                          blurRadius: 12,
+                          offset: Offset(0, 5),
                         ),
                       ],
                     ),
@@ -1152,13 +1811,14 @@ class _StaffPreviewSection extends StatelessWidget {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 8),
                         Text(
                           name.isEmpty ? '—' : name,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w800,
+                            height: 1.2,
                           ),
                         ),
                         if (dept.isNotEmpty)
@@ -1230,6 +1890,7 @@ class _BranchesPreviewSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = theme.colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1242,12 +1903,16 @@ class _BranchesPreviewSection extends StatelessWidget {
                 children: [
                   Text(
                     l10n.homeBranchesSectionTitle,
-                    style: theme.textTheme.titleLarge,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     l10n.homeBranchesSectionSubtitle,
-                    style: theme.textTheme.bodyMedium,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ),
@@ -1258,75 +1923,108 @@ class _BranchesPreviewSection extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
         if (branches.isEmpty)
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(18),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.88),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.85)),
+              borderRadius: _HomeLayout.radiusCard,
+              border: Border.all(color: const Color(0xFFE2E8F0)),
             ),
             child: Text(
               l10n.branchesEmpty,
               style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+                color: cs.onSurfaceVariant,
               ),
             ),
           )
         else
-          ...branches.take(4).map((b) {
-            final name = b['name']?.toString() ?? '';
-            final city = b['city']?.toString() ?? '';
-            final line = [name, city].where((e) => e.isNotEmpty).join(' · ');
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Material(
-                color: Colors.white.withValues(alpha: 0.92),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(22),
+          LayoutBuilder(
+            builder: (context, c) {
+              final cross = c.maxWidth >= 640 ? 2 : 1;
+              final slice = branches.take(4).toList();
+              return GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: cross,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: cross == 2 ? 2.85 : 2.35,
                 ),
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(22),
-                  onTap: () => context.push('/branches'),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 14,
-                    ),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(22),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.85),
+                itemCount: slice.length,
+                itemBuilder: (context, i) {
+                  final b = slice[i];
+                  final name = b['name']?.toString() ?? '';
+                  final city = b['city']?.toString() ?? '';
+                  return Material(
+                    color: Colors.white.withValues(alpha: 0.92),
+                    borderRadius: _HomeLayout.radiusCard,
+                    clipBehavior: Clip.antiAlias,
+                    child: InkWell(
+                      onTap: () => context.push('/branches'),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: cs.primary.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Icon(
+                                Icons.apartment_rounded,
+                                color: cs.primary,
+                                size: 22,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    name.isEmpty ? '—' : name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  if (city.isNotEmpty)
+                                    Text(
+                                      city,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: cs.onSurfaceVariant,
+                                          ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            Icon(
+                              Icons.arrow_outward_rounded,
+                              size: 20,
+                              color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.location_on_rounded,
-                          color: theme.colorScheme.primary,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            line.isEmpty ? '—' : line,
-                            style: theme.textTheme.titleSmall,
-                          ),
-                        ),
-                        Icon(
-                          Icons.chevron_right_rounded,
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            );
-          }),
+                  );
+                },
+              );
+            },
+          ),
       ],
     );
   }
@@ -1443,6 +2141,7 @@ class _HeroPanel extends StatelessWidget {
     required this.isAuthed,
     required this.upcomingCount,
     required this.profileCompletion,
+    this.nextAppointment,
     required this.onBook,
     required this.onAi,
   });
@@ -1451,6 +2150,7 @@ class _HeroPanel extends StatelessWidget {
   final bool isAuthed;
   final String upcomingCount;
   final String profileCompletion;
+  final Map<String, dynamic>? nextAppointment;
   final VoidCallback onBook;
   final VoidCallback onAi;
 
@@ -1463,6 +2163,11 @@ class _HeroPanel extends StatelessWidget {
         : l10n.homePremiumHeadlineGuest;
     final subtitle = l10n.homePremiumSubtitle;
 
+    final profilePct = int.tryParse(
+          profileCompletion.replaceAll('%', '').trim(),
+        )?.clamp(0, 100) ??
+        0;
+
     final gradientBox = BoxDecoration(
       gradient: const LinearGradient(
         begin: Alignment.topLeft,
@@ -1470,7 +2175,7 @@ class _HeroPanel extends StatelessWidget {
         colors: [Color(0xFF0E7490), Color(0xFF155E75), Color(0xFF0F172A)],
         stops: [0.0, 0.45, 1.0],
       ),
-      borderRadius: BorderRadius.circular(24),
+      borderRadius: _HomeLayout.radiusCard,
       border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
       boxShadow: const [
         BoxShadow(
@@ -1485,9 +2190,9 @@ class _HeroPanel extends StatelessWidget {
         ? theme.textTheme.headlineMedium?.copyWith(
             color: Colors.white,
             fontWeight: FontWeight.w800,
-            height: 1.15,
-            fontSize: 30,
-            letterSpacing: -0.6,
+            height: 1.12,
+            fontSize: 28,
+            letterSpacing: -0.55,
           )
         : theme.textTheme.titleLarge?.copyWith(
             color: Colors.white,
@@ -1497,7 +2202,7 @@ class _HeroPanel extends StatelessWidget {
           );
 
     final badge = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.16),
         borderRadius: BorderRadius.circular(999),
@@ -1516,10 +2221,13 @@ class _HeroPanel extends StatelessWidget {
 
     final subtitleWidget = Text(
       subtitle,
+      maxLines: 3,
+      overflow: TextOverflow.ellipsis,
       style: theme.textTheme.bodyLarge?.copyWith(
         color: Colors.white.withValues(alpha: 0.82),
-        height: 1.45,
+        height: 1.4,
         fontWeight: FontWeight.w500,
+        fontSize: isWide ? 15.5 : null,
       ),
     );
 
@@ -1533,7 +2241,7 @@ class _HeroPanel extends StatelessWidget {
           style: FilledButton.styleFrom(
             backgroundColor: Colors.white,
             foregroundColor: const Color(0xFF155E75),
-            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),
@@ -1546,7 +2254,7 @@ class _HeroPanel extends StatelessWidget {
           style: OutlinedButton.styleFrom(
             foregroundColor: Colors.white,
             side: BorderSide(color: Colors.white.withValues(alpha: 0.55)),
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),
@@ -1557,151 +2265,216 @@ class _HeroPanel extends StatelessWidget {
       ],
     );
 
-    final summaryCard = Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            l10n.homeMetricUpcoming,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.75),
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            upcomingCount,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 28,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 18),
-          Text(
-            l10n.homeMetricProfile,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.75),
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            profileCompletion,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
-    );
+    String? apptPreview;
+    if (nextAppointment != null) {
+      final ap = nextAppointment!;
+      final dt = ap['startsAt']?.toString() ?? '';
+      final st = DateTime.tryParse(dt);
+      final when = st != null
+          ? DateFormat('MMM d · HH:mm').format(st)
+          : dt;
+      final doc = _appointmentDoctorName(ap);
+      apptPreview = [when, doc].where((e) => e.isNotEmpty).join(' · ');
+    }
 
-    if (isWide) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 22),
-        decoration: gradientBox,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              flex: 58,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    final rightStack = Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (apptPreview != null && apptPreview.isNotEmpty)
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  l10n.homeMetricUpcoming,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.75),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  apptPreview,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    height: 1.25,
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
+            ),
+            child: Row(
+              children: [
+                Text(
+                  l10n.homeMetricUpcoming,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.75),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  upcomingCount,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        const SizedBox(height: 10),
+        Text(
+          l10n.homeMetricProfile,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.75),
+            fontWeight: FontWeight.w600,
+            fontSize: 12,
+          ),
+        ),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: LinearProgressIndicator(
+            value: profilePct / 100,
+            minHeight: 8,
+            backgroundColor: Colors.white.withValues(alpha: 0.2),
+            color: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          profileCompletion,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.9),
+            fontWeight: FontWeight.w700,
+            fontSize: 13,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Material(
+          color: Colors.white.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(14),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onAi,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(
                 children: [
-                  badge,
-                  const SizedBox(height: 16),
-                  Text(headline, style: headlineStyle),
-                  const SizedBox(height: 12),
-                  subtitleWidget,
-                  const SizedBox(height: 22),
-                  ctas,
+                  const Icon(
+                    Icons.auto_awesome_rounded,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          l10n.homeCardAskAiTitle,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 13,
+                          ),
+                        ),
+                        Text(
+                          l10n.homeAskAi,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.8),
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: Colors.white.withValues(alpha: 0.85),
+                  ),
                 ],
               ),
             ),
-            const SizedBox(width: 24),
-            Expanded(flex: 42, child: summaryCard),
-          ],
+          ),
+        ),
+      ],
+    );
+
+    if (isWide) {
+      return ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 448),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
+          decoration: gradientBox,
+          alignment: Alignment.center,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                flex: 56,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    badge,
+                    const SizedBox(height: 12),
+                    Text(headline, style: headlineStyle),
+                    const SizedBox(height: 10),
+                    subtitleWidget,
+                    const SizedBox(height: 18),
+                    ctas,
+                  ],
+                ),
+              ),
+              const SizedBox(width: 20),
+              Expanded(flex: 44, child: rightStack),
+            ],
+          ),
         ),
       );
     }
 
     return Container(
-      padding: const EdgeInsets.all(22),
+      padding: const EdgeInsets.all(20),
       decoration: gradientBox,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           badge,
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           Text(headline, style: headlineStyle),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           subtitleWidget,
+          const SizedBox(height: 14),
+          rightStack,
           const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _MetricChip(
-                  label: l10n.homeMetricUpcoming,
-                  value: upcomingCount,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _MetricChip(
-                  label: l10n.homeMetricProfile,
-                  value: profileCompletion,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
           ctas,
-        ],
-      ),
-    );
-  }
-}
-
-class _MetricChip extends StatelessWidget {
-  const _MetricChip({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.72)),
-          ),
         ],
       ),
     );
@@ -1720,9 +2493,19 @@ class _SectionHeader extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: theme.textTheme.titleLarge),
+        Text(
+          title,
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
+        ),
         const SizedBox(height: 4),
-        Text(subtitle, style: theme.textTheme.bodyMedium),
+        Text(
+          subtitle,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
       ],
     );
   }

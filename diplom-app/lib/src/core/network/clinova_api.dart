@@ -296,7 +296,9 @@ class ClinovaApi {
       '/doctors',
       queryParameters: queryParameters,
     );
-    return _asList(response.data).map(_withAbsoluteDoctorAvatar).toList();
+    // Match other list endpoints: raw array or `{ items | data | results: [...] }`.
+    final list = _normalizeTopLevelList(response.data);
+    return list.map(_withAbsoluteDoctorAvatar).toList();
   }
 
   /// Public doctor profile (`DoctorProfile.id`).

@@ -11,7 +11,18 @@ import '../../../core/widgets/clinova_backdrop.dart';
 import '../../../core/widgets/clinova_circle_avatar.dart';
 import '../../../core/widgets/guest_auth_prompt.dart';
 import '../../../core/media/doctor_avatar_mapper.dart';
+import '../../../core/network/online_presence_provider.dart';
 import '../../auth/application/auth_controller.dart';
+
+String _aptDoctorsBroadenedNotice(AppLocalizations l10n) {
+  if (l10n.localeName.toLowerCase().startsWith('mn')) {
+    return 'Энэ үйлчилгээтэй шууд тохирох эмч олдсонгүй. Тасгийн эмч нарыг харуулж байна — цагаа сонгоод үргэлжлүүлнэ үү.';
+  }
+  return 'No doctors matched this service filter. Showing doctors in this department — choose a time slot to continue.';
+}
+
+String _slotKey(Map<String, dynamic> s) =>
+    '${s['startsAt']}|${s['doctorId']}';
 
 class AppointmentScreen extends ConsumerStatefulWidget {
   const AppointmentScreen({
@@ -49,8 +60,10 @@ class _AppointmentScreenState extends ConsumerState<AppointmentScreen> {
   List<Map<String, dynamic>> upcomingAppointments = const [];
 
   bool isCatalogLoading = true;
+  bool isDoctorsLoading = false;
   bool isSlotsLoading = false;
   bool isBooking = false;
+  bool doctorsUsedDeptFallback = false;
   String? errorMessage;
 
   String? selectedBranchId;
@@ -282,36 +295,95 @@ class _AppointmentScreenState extends ConsumerState<AppointmentScreen> {
     await _loadDoctors();
   }
 
+  bool _doctorOffersService(Map<String, dynamic> d, String serviceId) {
+    final raw = d['services'];
+    if (raw is! List) return false;
+    for (final item in raw) {
+      if (item is Map) {
+        final s = item['service'];
+        if (s is Map && s['id']?.toString() == serviceId) return true;
+        if (item['serviceId']?.toString() == serviceId) return true;
+      }
+    }
+    return false;
+  }
+
   Future<void> _loadDoctors() async {
-    if (selectedServiceId == null) return;
-
-    final fetchedDoctors = await ref
-        .read(clinovaApiProvider)
-        .getDoctors(
-          branchId: selectedBranchId,
-          departmentId: selectedDepartmentId,
-          serviceId: selectedServiceId,
-        );
-
-    final wantDoctor = widget.initialDoctorId;
-    final doctorPick =
-        wantDoctor != null &&
-            fetchedDoctors.any((d) => d['id'].toString() == wantDoctor)
-        ? wantDoctor
-        : (fetchedDoctors.isNotEmpty
-              ? fetchedDoctors.first['id'].toString()
-              : null);
+    final serviceId = selectedServiceId;
+    if (serviceId == null) return;
 
     setState(() {
-      doctors = fetchedDoctors;
-      selectedDoctorId = doctorPick;
-      slots = const [];
-      recommendedSlots = const [];
-      loadBalancedDoctors = const [];
-      selectedSlot = null;
-      currentStep = 2;
+      isDoctorsLoading = true;
+      doctorsUsedDeptFallback = false;
+      errorMessage = null;
     });
 
+    try {
+      final api = ref.read(clinovaApiProvider);
+
+      var fetched = await api.getDoctors(
+        branchId: selectedBranchId,
+        departmentId: selectedDepartmentId,
+        serviceId: serviceId,
+      );
+
+      if (fetched.isEmpty && selectedDepartmentId != null) {
+        final broader = await api.getDoctors(
+          branchId: selectedBranchId,
+          departmentId: selectedDepartmentId,
+        );
+        final matched = broader
+            .where((d) => _doctorOffersService(d, serviceId))
+            .toList();
+        fetched = matched.isNotEmpty ? matched : broader;
+        if (fetched.isNotEmpty && matched.isEmpty) {
+          if (mounted) {
+            setState(() => doctorsUsedDeptFallback = true);
+          }
+        }
+      }
+
+      final wantDoctor = widget.initialDoctorId;
+      String? doctorPick;
+      if (wantDoctor != null &&
+          fetched.any((d) => d['id'].toString() == wantDoctor)) {
+        doctorPick = wantDoctor;
+      } else if (fetched.isNotEmpty) {
+        doctorPick = fetched.first['id']?.toString();
+      }
+
+      if (!mounted) return;
+      setState(() {
+        doctors = fetched;
+        selectedDoctorId = doctorPick;
+        slots = const [];
+        recommendedSlots = const [];
+        loadBalancedDoctors = const [];
+        selectedSlot = null;
+        currentStep = 2;
+      });
+
+      await _loadSlots();
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          errorMessage = e.toString();
+          doctors = const [];
+          selectedDoctorId = null;
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => isDoctorsLoading = false);
+      }
+    }
+  }
+
+  Future<void> _onSelectDoctor(String doctorId) async {
+    if (doctorId.isEmpty || doctorId == selectedDoctorId) return;
+    await _clearSlotSelection();
+    if (!mounted) return;
+    setState(() => selectedDoctorId = doctorId);
     await _loadSlots();
   }
 
@@ -747,10 +819,30 @@ class _AppointmentScreenState extends ConsumerState<AppointmentScreen> {
       options: options,
       selectedId: selectedDoctorId,
     );
-    if (!mounted || id == null || id == selectedDoctorId) return;
-    await _clearSlotSelection();
-    setState(() => selectedDoctorId = id);
-    await _loadSlots();
+    if (!mounted || id == null) return;
+    await _onSelectDoctor(id);
+  }
+
+  Map<String, dynamic>? _selectedDoctorMap() {
+    final id = selectedDoctorId;
+    if (id == null) return null;
+    for (final d in doctors) {
+      if (d['id']?.toString() == id) return d;
+    }
+    return null;
+  }
+
+  String _queueEstimateLabel(AppLocalizations l10n) {
+    for (final doc in loadBalancedDoctors) {
+      if (doc['doctorId']?.toString() == selectedDoctorId) {
+        final q =
+            int.tryParse((doc['activeQueueToday'] ?? doc['doctorLoad'] ?? 0)
+                    .toString()) ??
+                0;
+        return l10n.aptQueueLabel(q);
+      }
+    }
+    return '—';
   }
 
   @override
@@ -758,341 +850,1206 @@ class _AppointmentScreenState extends ConsumerState<AppointmentScreen> {
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+    final onlineIds = ref.watch(onlineUserIdsProvider);
 
     return Scaffold(
       body: ClinovaBackdrop(
         child: SafeArea(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-            children: [
-              Row(
-                children: [
-                  IconButton.filledTonal(
-                    onPressed: () => popOrGo(
-                      context,
-                      clinovaNavigationFallback(
-                        isAuthenticated: ref
-                            .read(authControllerProvider)
-                            .isAuthenticated,
-                        role: ref.read(authControllerProvider).user?.role,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              const maxContent = 1180.0;
+              final pad = constraints.maxWidth >= 900 ? 24.0 : 16.0;
+              final wide = constraints.maxWidth >= 1020;
+
+              Widget mainColumn() {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        IconButton.filledTonal(
+                          onPressed: () => popOrGo(
+                            context,
+                            clinovaNavigationFallback(
+                              isAuthenticated: ref
+                                  .read(authControllerProvider)
+                                  .isAuthenticated,
+                              role:
+                                  ref.read(authControllerProvider).user?.role,
+                            ),
+                          ),
+                          icon: const Icon(Icons.arrow_back_rounded),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                l10n.aptTitle,
+                                style: theme.textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  color: const Color(0xFF102A43),
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                l10n.aptSubtitle,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: cs.onSurface.withValues(alpha: 0.72),
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(Icons.calendar_month_rounded, color: cs.primary),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    if (isCatalogLoading)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 40),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else ...[
+                      if (departments.isEmpty && branches.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Text(
+                            l10n.aptBranchNoServices,
+                            style: TextStyle(
+                              color: cs.error,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      _BookingStepBar(currentStep: currentStep, l10n: l10n),
+                      const SizedBox(height: 8),
+                      Text(
+                        l10n.aptBookingChoicesTitle,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: cs.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                          height: 1.35,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _BookingChoicesCard(
+                        l10n: l10n,
+                        branchLabel: l10n.aptChooseBranch,
+                        branchValue: _displayBranch(l10n),
+                        branchFilled: selectedBranchId != null,
+                        onBranch: () => _onPickBranch(l10n),
+                        branchEnabled: branches.isNotEmpty,
+                        departmentLabel: l10n.aptChooseDepartment,
+                        departmentValue: _displayDepartment(l10n),
+                        departmentFilled: selectedDepartmentId != null,
+                        onDepartment: () => _onPickDepartment(l10n),
+                        departmentEnabled: departments.isNotEmpty,
+                        serviceLabel: l10n.aptChooseService,
+                        serviceValue: _displayService(l10n),
+                        serviceFilled: selectedServiceId != null,
+                        onService: () => _onPickService(l10n),
+                        serviceEnabled: services.isNotEmpty,
+                        showDoctorPicker: false,
+                        doctorLabel: l10n.aptChooseDoctor,
+                        doctorValue: _displayDoctor(l10n),
+                        doctorFilled: selectedDoctorId != null,
+                        onDoctor: () => _onPickDoctor(l10n),
+                        doctorEnabled: doctors.isNotEmpty,
+                        reasonTitle: l10n.aptVisitReason,
+                        reasonHint: l10n.aptReasonHint,
+                        reasonController: reasonController,
+                      ),
+                      if (selectedServiceId != null) ...[
+                        const SizedBox(height: 16),
+                        Text(
+                          l10n.aptChooseDoctor,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          l10n.homeCardBookVisitSubtitle,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        if (doctorsUsedDeptFallback)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Material(
+                              color: const Color(0xFFFFFBEB),
+                              borderRadius: BorderRadius.circular(12),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.info_outline_rounded,
+                                      color: Colors.orange.shade800,
+                                      size: 22,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        _aptDoctorsBroadenedNotice(l10n),
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(
+                                          color: const Color(0xFF92400E),
+                                          fontWeight: FontWeight.w600,
+                                          height: 1.35,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        _DoctorSelectGrid(
+                          doctors: doctors,
+                          selectedDoctorId: selectedDoctorId,
+                          onlineUserIds: onlineIds,
+                          isLoading: isDoctorsLoading,
+                          l10n: l10n,
+                          onSelect: _onSelectDoctor,
+                        ),
+                      ],
+                      if (intakeFields.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        _DynamicIntakeCard(
+                          fields: intakeFields,
+                          answers: intakeAnswers,
+                          onChanged: (id, value) {
+                            setState(() {
+                              if (value == null ||
+                                  (value is String && value.trim().isEmpty)) {
+                                intakeAnswers.remove(id);
+                              } else {
+                                intakeAnswers[id] = value;
+                              }
+                            });
+                          },
+                        ),
+                      ],
+                      if (services.isEmpty &&
+                          departments.isNotEmpty &&
+                          selectedDepartmentId != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 10),
+                          child: Text(
+                            l10n.aptNoServicesForDept,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: cs.onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      if (selectedDoctorId != null) ...[
+                        const SizedBox(height: 18),
+                        Text(
+                          l10n.aptAvailableSlots,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: List.generate(7, (index) {
+                            final date =
+                                DateTime.now().add(Duration(days: index));
+                            final selected =
+                                DateFormat('yyyy-MM-dd').format(date) ==
+                                    DateFormat('yyyy-MM-dd')
+                                        .format(selectedDate);
+                            return ChoiceChip(
+                              label: Text(
+                                DateFormat('EEE d', l10n.localeName)
+                                    .format(date),
+                              ),
+                              selected: selected,
+                              onSelected: (_) async {
+                                await _clearSlotSelection();
+                                setState(() {
+                                  selectedDate = date;
+                                });
+                                await _loadSlots();
+                              },
+                            );
+                          }),
+                        ),
+                        const SizedBox(height: 12),
+                        if (loadBalancedDoctors.isNotEmpty) ...[
+                          Text(
+                            l10n.aptSuggestedDoctorsTitle,
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              for (final doc in loadBalancedDoctors)
+                                ActionChip(
+                                  avatar: Icon(
+                                    Icons.bolt_rounded,
+                                    size: 18,
+                                    color: cs.primary,
+                                  ),
+                                  label: Text(
+                                    '${doc['doctorName'] ?? l10n.homeFallbackDoctor} · ${l10n.aptQueueLabel(int.tryParse((doc['activeQueueToday'] ?? doc['doctorLoad'] ?? 0).toString()) ?? 0)}',
+                                    style: theme.textTheme.labelMedium,
+                                  ),
+                                  onPressed: () async {
+                                    final id = doc['doctorId']?.toString();
+                                    if (id == null || id.isEmpty) return;
+                                    await _onSelectDoctor(id);
+                                  },
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                        ],
+                        if (isSlotsLoading)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 20),
+                            child:
+                                Center(child: CircularProgressIndicator()),
+                          )
+                        else if (slots.isEmpty)
+                          _EmptySlotsCard(
+                            l10n: l10n,
+                            canWaitlist: selectedServiceId != null &&
+                                ref
+                                    .read(authControllerProvider)
+                                    .isAuthenticated,
+                            onWaitlist: () async {
+                              final date = DateFormat('yyyy-MM-dd')
+                                  .format(selectedDate);
+                              await ref
+                                  .read(clinovaApiProvider)
+                                  .joinAppointmentWaitlist(
+                                    serviceId: selectedServiceId!,
+                                    branchId: selectedBranchId,
+                                    departmentId: selectedDepartmentId,
+                                    preferredDate: date,
+                                    preferredHourStart: 9,
+                                    preferredHourEnd: 20,
+                                    note: reasonController.text.trim(),
+                                  );
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                    content: Text(l10n.aptAddedToWaitlist)),
+                              );
+                            },
+                          )
+                        else
+                          _SlotTimeGrid(
+                            slots: slots,
+                            recommendedIds: {
+                              for (final s in recommendedSlots) _slotKey(s),
+                            },
+                            selectedSlot: selectedSlot,
+                            isBooking: isBooking,
+                            onPick: _selectSlot,
+                            l10n: l10n,
+                            dense: wide,
+                          ),
+                      ],
+                      if (selectedSlot != null) ...[
+                        const SizedBox(height: 12),
+                        _BookingConfirmCard(
+                          slot: selectedSlot!,
+                          l10n: l10n,
+                          isBooking: isBooking,
+                          onConfirm: _confirmSelectedSlot,
+                          onCancel: () async {
+                            await _clearSlotSelection();
+                            if (!mounted) return;
+                            setState(() => currentStep = 2);
+                          },
+                        ),
+                      ],
+                      if (errorMessage != null) ...[
+                        const SizedBox(height: 12),
+                        SelectableText(
+                          errorMessage!,
+                          style: const TextStyle(color: Color(0xFFB42318)),
+                        ),
+                      ],
+                      const SizedBox(height: 10),
+                      Material(
+                        color: Colors.white.withValues(alpha: 0.88),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: Theme(
+                          data: theme.copyWith(dividerColor: Colors.transparent),
+                          child: ExpansionTile(
+                            initiallyExpanded: false,
+                            tilePadding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 2,
+                            ),
+                            childrenPadding:
+                                const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                            title: Text(
+                              l10n.aptPendingListTitle,
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            subtitle: upcomingAppointments.isEmpty
+                                ? null
+                                : Text(
+                                    '${upcomingAppointments.length}',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: cs.primary,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                            children: [
+                              if (upcomingAppointments.isEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Text(l10n.aptNoPending),
+                                )
+                              else
+                                ..._groupUpcomingByDoctor(
+                                  context,
+                                  upcomingAppointments,
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                );
+              }
+
+              Widget sidebar() {
+                final doc = _selectedDoctorMap();
+                return _BookingSummarySidebar(
+                  l10n: l10n,
+                  doctor: doc,
+                  onlineUserIds: onlineIds,
+                  branchLabel: _displayBranch(l10n),
+                  departmentLabel: _displayDepartment(l10n),
+                  serviceLabel: _displayService(l10n),
+                  dateLabel: DateFormat.yMMMEd(l10n.localeName)
+                      .format(selectedDate),
+                  queueHint: _queueEstimateLabel(l10n),
+                  loadBalanced: loadBalancedDoctors,
+                  onAiTap: () => context.push('/agent'),
+                );
+              }
+
+              return Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: maxContent),
+                  child: wide
+                      ? Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              flex: 62,
+                              child: SingleChildScrollView(
+                                padding: EdgeInsets.fromLTRB(pad, 8, 14, 32),
+                                child: mainColumn(),
+                              ),
+                            ),
+                            Expanded(
+                              flex: 38,
+                              child: SingleChildScrollView(
+                                padding: EdgeInsets.fromLTRB(8, 8, pad, 32),
+                                child: Padding(
+                                  padding: const EdgeInsets.only(top: 52),
+                                  child: sidebar(),
+                                ),
+                              ),
+                            ),
+                          ],
+                        )
+                      : ListView(
+                          padding: EdgeInsets.fromLTRB(pad, 8, pad, 32),
+                          children: [
+                            mainColumn(),
+                            const SizedBox(height: 20),
+                            sidebar(),
+                          ],
+                        ),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DoctorSelectGrid extends StatelessWidget {
+  const _DoctorSelectGrid({
+    required this.doctors,
+    required this.selectedDoctorId,
+    required this.onlineUserIds,
+    required this.isLoading,
+    required this.l10n,
+    required this.onSelect,
+  });
+
+  final List<Map<String, dynamic>> doctors;
+  final String? selectedDoctorId;
+  final Set<String> onlineUserIds;
+  final bool isLoading;
+  final AppLocalizations l10n;
+  final ValueChanged<String> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    if (isLoading) {
+      return Column(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: LinearProgressIndicator(
+              minHeight: 4,
+              backgroundColor: cs.surfaceContainerHighest,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            l10n.aptBooking,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: cs.onSurfaceVariant,
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (doctors.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerHighest.withValues(alpha: 0.35),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.people_outline_rounded, color: cs.primary, size: 28),
+            const SizedBox(height: 8),
+            Text(
+              l10n.aptChooseDoctor,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              l10n.homeStaffEmpty,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, c) {
+        var cross = 1;
+        if (c.maxWidth >= 920) {
+          cross = 3;
+        } else if (c.maxWidth >= 560) {
+          cross = 2;
+        }
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: cross,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            mainAxisExtent: cross == 1 ? 168 : 158,
+          ),
+          itemCount: doctors.length,
+          itemBuilder: (context, i) {
+            final d = doctors[i];
+            final id = d['id']?.toString() ?? '';
+            final u = d['user'];
+            final userMap = u is Map<String, dynamic> ? u : null;
+            final name = userMap == null
+                ? l10n.homeFallbackDoctor
+                : '${userMap['firstName'] ?? ''} ${userMap['lastName'] ?? ''}'
+                    .trim();
+            final displayName =
+                name.isEmpty ? l10n.homeFallbackDoctor : name;
+            final initial = displayName.isNotEmpty
+                ? String.fromCharCode(displayName.runes.first)
+                    .toUpperCase()
+                : '?';
+            final dept =
+                d['department']?['name']?.toString() ?? '';
+            final userId = userMap?['id']?.toString();
+            final online = userId != null && onlineUserIds.contains(userId);
+            final ratingVal = d['avgRating'] ?? d['rating'];
+            final ratingText = ratingVal is num
+                ? ratingVal.toStringAsFixed(1)
+                : null;
+            final years = d['experienceYears'];
+            final expText = years is num && years > 0
+                ? '${years.toInt()}+ ${l10n.localeName.startsWith('mn') ? 'жил' : 'yrs'}'
+                : null;
+            final sel = id == selectedDoctorId;
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: sel
+                      ? const Color(0xFF1769FF)
+                      : const Color(0xFFE2E8F0),
+                  width: sel ? 2 : 1,
+                ),
+                boxShadow: sel
+                    ? const [
+                        BoxShadow(
+                          color: Color(0x331769FF),
+                          blurRadius: 14,
+                          offset: Offset(0, 6),
+                        ),
+                      ]
+                    : const [
+                        BoxShadow(
+                          color: Color(0x080F172A),
+                          blurRadius: 10,
+                          offset: Offset(0, 4),
+                        ),
+                      ],
+              ),
+              child: Material(
+                color: Colors.white.withValues(alpha: 0.94),
+                borderRadius: BorderRadius.circular(15),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: id.isEmpty ? null : () => onSelect(id),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                ClinovaCircleAvatar(
+                                  radius: 22,
+                                  initialsText: initial,
+                                  backgroundColor:
+                                      kClinovaFlatDoctorAvatarBackground,
+                                  foregroundColor: const Color(0xFF475569),
+                                  doctorUseFlatAssetOnly: true,
+                                  doctorDisplayName: displayName,
+                                  doctorGender: doctorGenderFromMap(userMap),
+                                ),
+                                if (online)
+                                  Positioned(
+                                    right: -1,
+                                    bottom: -1,
+                                    child: Container(
+                                      width: 12,
+                                      height: 12,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF22C55E),
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: Colors.white,
+                                          width: 2,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    displayName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.titleSmall
+                                        ?.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                      height: 1.15,
+                                    ),
+                                  ),
+                                  if (dept.isNotEmpty)
+                                    Text(
+                                      dept,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                        color: cs.onSurfaceVariant,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const Spacer(),
+                        Row(
+                          children: [
+                            if (ratingText != null)
+                              Text(
+                                '★ $ratingText',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFFF59E0B),
+                                ),
+                              ),
+                            if (ratingText != null && expText != null)
+                              Text(
+                                ' · ',
+                                style: theme.textTheme.labelSmall,
+                              ),
+                            if (expText != null)
+                              Expanded(
+                                child: Text(
+                                  expText,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: cs.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: online
+                                    ? const Color(0xFFDCFCE7)
+                                    : cs.surfaceContainerHighest,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                online ? 'Online' : 'Offline',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  color: online
+                                      ? const Color(0xFF166534)
+                                      : cs.onSurfaceVariant,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 36,
+                          child: FilledButton(
+                            onPressed:
+                                id.isEmpty ? null : () => onSelect(id),
+                            style: FilledButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: Text(l10n.aptSelect),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _SlotTimeGrid extends StatelessWidget {
+  const _SlotTimeGrid({
+    required this.slots,
+    required this.recommendedIds,
+    required this.selectedSlot,
+    required this.isBooking,
+    required this.onPick,
+    required this.l10n,
+    this.dense = false,
+  });
+
+  final List<Map<String, dynamic>> slots;
+  final Set<String> recommendedIds;
+  final Map<String, dynamic>? selectedSlot;
+  final bool isBooking;
+  final void Function(Map<String, dynamic> slot) onPick;
+  final AppLocalizations l10n;
+  final bool dense;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final selKey =
+        selectedSlot == null ? null : _slotKey(selectedSlot!);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (recommendedIds.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                Icon(Icons.auto_awesome_rounded,
+                    size: 18, color: cs.primary),
+                const SizedBox(width: 6),
+                Text(
+                  l10n.aptRecommendedTimesTitle,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        Wrap(
+          spacing: dense ? 8 : 10,
+          runSpacing: dense ? 8 : 10,
+          children: [
+            for (final slot in slots)
+              Builder(
+                builder: (context) {
+                  final k = _slotKey(slot);
+                  final start =
+                      DateTime.tryParse(slot['startsAt']?.toString() ?? '');
+                  final label = start != null
+                      ? DateFormat('HH:mm', l10n.localeName).format(start)
+                      : '--:--';
+                  final rec = recommendedIds.contains(k);
+                  final sel = selKey == k;
+                  final busy = (slot['available'] == false) ||
+                      (slot['isAvailable'] == false);
+                  return AnimatedScale(
+                    scale: sel ? 1.03 : 1,
+                    duration: const Duration(milliseconds: 200),
+                    child: Material(
+                      color: busy
+                          ? cs.surfaceContainerHighest.withValues(alpha: 0.5)
+                          : rec
+                              ? const Color(0xFFEFF6FF)
+                              : cs.surface,
+                      borderRadius: BorderRadius.circular(14),
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        onTap: busy || isBooking
+                            ? null
+                            : () => onPick(slot),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: sel
+                                  ? cs.primary
+                                  : rec
+                                      ? const Color(0xFF1769FF)
+                                          .withValues(alpha: 0.45)
+                                      : const Color(0xFFE2E8F0),
+                              width: sel ? 2 : 1,
+                            ),
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                label,
+                                style: theme.textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              if (rec)
+                                Text(
+                                  l10n.aiTitle,
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: cs.primary,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
-                    icon: const Icon(Icons.arrow_back_rounded),
+                  );
+                },
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _EmptySlotsCard extends StatelessWidget {
+  const _EmptySlotsCard({
+    required this.l10n,
+    required this.canWaitlist,
+    required this.onWaitlist,
+  });
+
+  final AppLocalizations l10n;
+  final bool canWaitlist;
+  final VoidCallback onWaitlist;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.event_busy_rounded, color: theme.colorScheme.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  l10n.aptNoSlots,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
                   ),
-                  const SizedBox(width: 12),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (canWaitlist)
+            FilledButton.tonal(
+              onPressed: onWaitlist,
+              child: Text(l10n.aptJoinWaitingList),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BookingSummarySidebar extends StatelessWidget {
+  const _BookingSummarySidebar({
+    required this.l10n,
+    required this.doctor,
+    required this.onlineUserIds,
+    required this.branchLabel,
+    required this.departmentLabel,
+    required this.serviceLabel,
+    required this.dateLabel,
+    required this.queueHint,
+    required this.loadBalanced,
+    required this.onAiTap,
+  });
+
+  final AppLocalizations l10n;
+  final Map<String, dynamic>? doctor;
+  final Set<String> onlineUserIds;
+  final String branchLabel;
+  final String departmentLabel;
+  final String serviceLabel;
+  final String dateLabel;
+  final String queueHint;
+  final List<Map<String, dynamic>> loadBalanced;
+  final VoidCallback onAiTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final u = doctor?['user'];
+    final userMap = u is Map<String, dynamic> ? u : null;
+    final name = userMap == null
+        ? '—'
+        : '${userMap['firstName'] ?? ''} ${userMap['lastName'] ?? ''}'.trim();
+    final userId = userMap?['id']?.toString();
+    final online = userId != null && onlineUserIds.contains(userId);
+    final rec = loadBalanced.isNotEmpty ? loadBalanced.first : null;
+    final recLine = rec == null
+        ? null
+        : '${rec['recommendationReason'] ?? rec['doctorName'] ?? ''}';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          l10n.aptConfirmBookingTitle,
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w800,
+            color: const Color(0xFF102A43),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.92),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                l10n.aptChooseDoctor,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: cs.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (doctor == null)
+                Text('—', style: theme.textTheme.bodyMedium)
+              else
+                Row(
+                  children: [
+                    ClinovaCircleAvatar(
+                      radius: 24,
+                      initialsText: name.isNotEmpty
+                          ? String.fromCharCode(name.runes.first)
+                              .toUpperCase()
+                          : '?',
+                      backgroundColor: kClinovaFlatDoctorAvatarBackground,
+                      foregroundColor: const Color(0xFF475569),
+                      doctorUseFlatAssetOnly: true,
+                      doctorDisplayName: name.isEmpty ? null : name,
+                      doctorGender: doctorGenderFromMap(userMap),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            name.isEmpty ? '—' : name,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          Text(
+                            doctor!['department']?['name']?.toString() ?? '',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ),
+                          Text(
+                            online
+                                ? (l10n.localeName.startsWith('mn')
+                                    ? 'Онлайн'
+                                    : 'Online')
+                                : (l10n.localeName.startsWith('mn')
+                                    ? 'Офлайн'
+                                    : 'Offline'),
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: online
+                                  ? const Color(0xFF166534)
+                                  : cs.onSurfaceVariant,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.88),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _sideLine(theme, l10n.aptChooseBranch, branchLabel),
+              _sideLine(theme, l10n.aptChooseDepartment, departmentLabel),
+              _sideLine(theme, l10n.aptChooseService, serviceLabel),
+              _sideLine(theme, l10n.aptStepTime, dateLabel),
+              const Divider(height: 20),
+              Row(
+                children: [
+                  Icon(Icons.tag_rounded, size: 18, color: cs.primary),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(l10n.aptTitle, style: theme.textTheme.titleLarge),
-                        const SizedBox(height: 2),
                         Text(
-                          l10n.aptSubtitle,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: cs.onSurface.withValues(alpha: 0.72),
+                          l10n.localeName.startsWith('mn')
+                              ? 'Өнөөдрийн дараалал'
+                              : "Today's queue",
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: cs.onSurfaceVariant,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          queueHint,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ],
                     ),
                   ),
-                  Icon(Icons.calendar_month_rounded, color: cs.primary),
                 ],
               ),
-              const SizedBox(height: 12),
-              if (isCatalogLoading)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else ...[
-                if (departments.isEmpty && branches.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: Text(
-                      l10n.aptBranchNoServices,
-                      style: TextStyle(
-                        color: cs.error,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                _BookingChoicesCard(
-                  l10n: l10n,
-                  branchLabel: l10n.aptChooseBranch,
-                  branchValue: _displayBranch(l10n),
-                  branchFilled: selectedBranchId != null,
-                  onBranch: () => _onPickBranch(l10n),
-                  branchEnabled: branches.isNotEmpty,
-                  departmentLabel: l10n.aptChooseDepartment,
-                  departmentValue: _displayDepartment(l10n),
-                  departmentFilled: selectedDepartmentId != null,
-                  onDepartment: () => _onPickDepartment(l10n),
-                  departmentEnabled: departments.isNotEmpty,
-                  serviceLabel: l10n.aptChooseService,
-                  serviceValue: _displayService(l10n),
-                  serviceFilled: selectedServiceId != null,
-                  onService: () => _onPickService(l10n),
-                  serviceEnabled: services.isNotEmpty,
-                  doctorLabel: l10n.aptChooseDoctor,
-                  doctorValue: _displayDoctor(l10n),
-                  doctorFilled: selectedDoctorId != null,
-                  onDoctor: () => _onPickDoctor(l10n),
-                  doctorEnabled: doctors.isNotEmpty,
-                  reasonTitle: l10n.aptVisitReason,
-                  reasonHint: l10n.aptReasonHint,
-                  reasonController: reasonController,
-                ),
-                if (intakeFields.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  _DynamicIntakeCard(
-                    fields: intakeFields,
-                    answers: intakeAnswers,
-                    onChanged: (id, value) {
-                      setState(() {
-                        if (value == null ||
-                            (value is String && value.trim().isEmpty)) {
-                          intakeAnswers.remove(id);
-                        } else {
-                          intakeAnswers[id] = value;
-                        }
-                      });
-                    },
-                  ),
-                ],
-                if (services.isEmpty &&
-                    departments.isNotEmpty &&
-                    selectedDepartmentId != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 10),
-                    child: Text(
-                      l10n.aptNoServicesForDept,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: cs.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: 14),
-                _BookingStepBar(currentStep: currentStep, l10n: l10n),
-                const SizedBox(height: 12),
-                Text(
-                  l10n.aptAvailableSlots,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: List.generate(7, (index) {
-                    final date = DateTime.now().add(Duration(days: index));
-                    final selected =
-                        DateFormat('yyyy-MM-dd').format(date) ==
-                        DateFormat('yyyy-MM-dd').format(selectedDate);
-                    return ChoiceChip(
-                      label: Text(
-                        DateFormat('EEE d', l10n.localeName).format(date),
-                      ),
-                      selected: selected,
-                      onSelected: (_) async {
-                        await _clearSlotSelection();
-                        setState(() {
-                          selectedDate = date;
-                        });
-                        await _loadSlots();
-                      },
-                    );
-                  }),
-                ),
-                const SizedBox(height: 12),
-                if (recommendedSlots.isNotEmpty) ...[
-                  Text(
-                    l10n.aptRecommendedTimesTitle,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  ...recommendedSlots.map(
-                    (slot) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: _SlotCard(
-                        slot: slot,
-                        isBooking: isBooking,
-                        onBook: () => _selectSlot(slot),
-                        doctorFallback: l10n.homeFallbackDoctor,
-                        bookingLabel: l10n.aptBooking,
-                        bookLabel: l10n.aptSelect,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                ],
-                if (loadBalancedDoctors.isNotEmpty) ...[
-                  Text(
-                    l10n.aptSuggestedDoctorsTitle,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final doc in loadBalancedDoctors)
-                        ActionChip(
-                          label: Text(
-                            '${doc['doctorName'] ?? l10n.homeFallbackDoctor} · ${l10n.aptQueueLabel(int.tryParse((doc['activeQueueToday'] ?? doc['doctorLoad'] ?? 0).toString()) ?? 0)}',
-                          ),
-                          onPressed: () async {
-                            final id = doc['doctorId']?.toString();
-                            if (id == null || id.isEmpty) return;
-                            await _clearSlotSelection();
-                            setState(() => selectedDoctorId = id);
-                            await _loadSlots();
-                          },
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                ],
-                if (isSlotsLoading)
-                  const Center(child: CircularProgressIndicator())
-                else if (slots.isEmpty)
-                  Container(
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.92),
-                      borderRadius: BorderRadius.circular(28),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(l10n.aptNoSlots),
-                        const SizedBox(height: 10),
-                        FilledButton.tonal(
-                          onPressed:
-                              selectedServiceId == null ||
-                                  !ref
-                                      .read(authControllerProvider)
-                                      .isAuthenticated
-                              ? null
-                              : () async {
-                                  final date = DateFormat(
-                                    'yyyy-MM-dd',
-                                  ).format(selectedDate);
-                                  await ref
-                                      .read(clinovaApiProvider)
-                                      .joinAppointmentWaitlist(
-                                        serviceId: selectedServiceId!,
-                                        branchId: selectedBranchId,
-                                        departmentId: selectedDepartmentId,
-                                        preferredDate: date,
-                                        preferredHourStart: 9,
-                                        preferredHourEnd: 20,
-                                        note: reasonController.text.trim(),
-                                      );
-                                  if (!context.mounted) return;
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(l10n.aptAddedToWaitlist),
-                                    ),
-                                  );
-                                },
-                          child: Text(l10n.aptJoinWaitingList),
-                        ),
-                      ],
-                    ),
-                  )
-                else
-                  ...slots.map(
-                    (slot) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _SlotCard(
-                        slot: slot,
-                        isBooking: isBooking,
-                        onBook: () => _selectSlot(slot),
-                        doctorFallback: l10n.homeFallbackDoctor,
-                        bookingLabel: l10n.aptBooking,
-                        bookLabel: l10n.aptSelect,
-                      ),
-                    ),
-                  ),
-                if (selectedSlot != null) ...[
-                  const SizedBox(height: 12),
-                  _BookingConfirmCard(
-                    slot: selectedSlot!,
-                    l10n: l10n,
-                    isBooking: isBooking,
-                    onConfirm: _confirmSelectedSlot,
-                    onCancel: () async {
-                      await _clearSlotSelection();
-                      if (!mounted) return;
-                      setState(() => currentStep = 2);
-                    },
-                  ),
-                ],
-                if (errorMessage != null) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    errorMessage!,
-                    style: const TextStyle(color: Color(0xFFB42318)),
-                  ),
-                ],
-                const SizedBox(height: 8),
-                Material(
-                  color: Colors.white.withValues(alpha: 0.88),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: Theme(
-                    data: theme.copyWith(dividerColor: Colors.transparent),
-                    child: ExpansionTile(
-                      initiallyExpanded: false,
-                      tilePadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 4,
-                      ),
-                      childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                      title: Text(
-                        l10n.aptPendingListTitle,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      subtitle: upcomingAppointments.isEmpty
-                          ? null
-                          : Text(
-                              '${upcomingAppointments.length}',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: cs.primary,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                      children: [
-                        if (upcomingAppointments.isEmpty)
-                          Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Text(l10n.aptNoPending),
-                          )
-                        else
-                          ..._groupUpcomingByDoctor(
-                            context,
-                            upcomingAppointments,
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
             ],
           ),
         ),
+        const SizedBox(height: 12),
+        Material(
+          borderRadius: BorderRadius.circular(16),
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onAiTap,
+            borderRadius: BorderRadius.circular(16),
+            child: Ink(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF071B4D), Color(0xFF1769FF)],
+                ),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x140F172A),
+                    blurRadius: 12,
+                    offset: Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.auto_awesome_rounded,
+                          color: Colors.white, size: 22),
+                      const SizedBox(width: 8),
+                      Text(
+                        l10n.homeCardAskAiTitle,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    recLine ??
+                        l10n.homeCardAskAiSubtitle,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: Colors.white.withValues(alpha: 0.9),
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  FilledButton(
+                    onPressed: onAiTap,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: const Color(0xFF1769FF),
+                    ),
+                    child: Text(l10n.homeAskAi),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _sideLine(ThemeData theme, String k, String v) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 108,
+            child: Text(
+              k,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              v,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1299,6 +2256,7 @@ class _BookingChoicesCard extends StatelessWidget {
     required this.serviceFilled,
     required this.onService,
     required this.serviceEnabled,
+    this.showDoctorPicker = true,
     required this.doctorLabel,
     required this.doctorValue,
     required this.doctorFilled,
@@ -1325,6 +2283,7 @@ class _BookingChoicesCard extends StatelessWidget {
   final bool serviceFilled;
   final VoidCallback onService;
   final bool serviceEnabled;
+  final bool showDoctorPicker;
   final String doctorLabel;
   final String doctorValue;
   final bool doctorFilled;
@@ -1422,18 +2381,19 @@ class _BookingChoicesCard extends StatelessWidget {
                           boxed: true,
                         ),
                       ),
-                      SizedBox(
-                        width: compactWidth,
-                        child: _CompactPickTile(
-                          label: doctorLabel,
-                          value: doctorValue,
-                          isFilled: doctorFilled,
-                          enabled: doctorEnabled,
-                          onTap: onDoctor,
-                          dense: true,
-                          boxed: true,
+                      if (showDoctorPicker)
+                        SizedBox(
+                          width: compactWidth,
+                          child: _CompactPickTile(
+                            label: doctorLabel,
+                            value: doctorValue,
+                            isFilled: doctorFilled,
+                            enabled: doctorEnabled,
+                            onTap: onDoctor,
+                            dense: true,
+                            boxed: true,
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 )
@@ -1471,19 +2431,21 @@ class _BookingChoicesCard extends StatelessWidget {
                   enabled: serviceEnabled,
                   onTap: onService,
                 ),
-                Divider(
-                  height: 1,
-                  indent: 16,
-                  endIndent: 16,
-                  color: cs.outline.withValues(alpha: 0.12),
-                ),
-                _CompactPickTile(
-                  label: doctorLabel,
-                  value: doctorValue,
-                  isFilled: doctorFilled,
-                  enabled: doctorEnabled,
-                  onTap: onDoctor,
-                ),
+                if (showDoctorPicker) ...[
+                  Divider(
+                    height: 1,
+                    indent: 16,
+                    endIndent: 16,
+                    color: cs.outline.withValues(alpha: 0.12),
+                  ),
+                  _CompactPickTile(
+                    label: doctorLabel,
+                    value: doctorValue,
+                    isFilled: doctorFilled,
+                    enabled: doctorEnabled,
+                    onTap: onDoctor,
+                  ),
+                ],
               ],
               Divider(
                 height: 1,
@@ -1803,70 +2765,6 @@ class _CompactPickTile extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _SlotCard extends StatelessWidget {
-  const _SlotCard({
-    required this.slot,
-    required this.onBook,
-    required this.isBooking,
-    required this.doctorFallback,
-    required this.bookingLabel,
-    required this.bookLabel,
-  });
-
-  final Map<String, dynamic> slot;
-  final VoidCallback onBook;
-  final bool isBooking;
-  final String doctorFallback;
-  final String bookingLabel;
-  final String bookLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    final start = DateTime.tryParse(slot['startsAt']?.toString() ?? '');
-    final locale = context.l10n.localeName;
-    final formattedTime = start != null
-        ? DateFormat('MMM d, HH:mm', locale).format(start)
-        : '--';
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(28),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  slot['doctorName']?.toString() ?? doctorFallback,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${slot['departmentName'] ?? ''} • ${slot['branchName'] ?? ''}',
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  formattedTime,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          FilledButton(
-            onPressed: isBooking ? null : onBook,
-            child: Text(isBooking ? bookingLabel : bookLabel),
-          ),
-        ],
       ),
     );
   }
