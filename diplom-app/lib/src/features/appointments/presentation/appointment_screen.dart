@@ -65,6 +65,12 @@ class _AppointmentScreenState extends ConsumerState<AppointmentScreen> {
   bool isBooking = false;
   bool doctorsUsedDeptFallback = false;
   String? errorMessage;
+  String? doctorsFetchError;
+
+  /// Apply [AppointmentScreen.initialDoctorId] only on the first doctor load
+  /// so branch/department changes do not keep forcing that profile when it
+  /// happens to appear in another list.
+  bool _initialRouteDoctorConsumed = false;
 
   String? selectedBranchId;
   String? selectedDepartmentId;
@@ -315,7 +321,7 @@ class _AppointmentScreenState extends ConsumerState<AppointmentScreen> {
     setState(() {
       isDoctorsLoading = true;
       doctorsUsedDeptFallback = false;
-      errorMessage = null;
+      doctorsFetchError = null;
     });
 
     try {
@@ -343,13 +349,22 @@ class _AppointmentScreenState extends ConsumerState<AppointmentScreen> {
         }
       }
 
-      final wantDoctor = widget.initialDoctorId;
+      final initialId = widget.initialDoctorId;
       String? doctorPick;
-      if (wantDoctor != null &&
-          fetched.any((d) => d['id'].toString() == wantDoctor)) {
-        doctorPick = wantDoctor;
-      } else if (fetched.isNotEmpty) {
-        doctorPick = fetched.first['id']?.toString();
+      if (!_initialRouteDoctorConsumed && initialId != null) {
+        _initialRouteDoctorConsumed = true;
+        if (fetched.any((d) => d['id'].toString() == initialId)) {
+          doctorPick = initialId;
+        }
+      }
+      if (doctorPick == null) {
+        final current = selectedDoctorId;
+        if (current != null &&
+            fetched.any((d) => d['id'].toString() == current)) {
+          doctorPick = current;
+        } else if (fetched.isNotEmpty) {
+          doctorPick = fetched.first['id']?.toString();
+        }
       }
 
       if (!mounted) return;
@@ -367,7 +382,7 @@ class _AppointmentScreenState extends ConsumerState<AppointmentScreen> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          errorMessage = e.toString();
+          doctorsFetchError = e.toString();
           doctors = const [];
           selectedDoctorId = null;
         });
@@ -796,6 +811,7 @@ class _AppointmentScreenState extends ConsumerState<AppointmentScreen> {
     if (!mounted || id == null || id == selectedServiceId) return;
     await _clearSlotSelection();
     setState(() => selectedServiceId = id);
+    await _loadIntakeSchema();
     await _loadDoctors();
   }
 
@@ -1014,11 +1030,86 @@ class _AppointmentScreenState extends ConsumerState<AppointmentScreen> {
                               ),
                             ),
                           ),
+                        if (doctorsFetchError != null) ...[
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Material(
+                              color: const Color(0xFFFEF2F2),
+                              borderRadius: BorderRadius.circular(12),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.error_outline_rounded,
+                                          color: cs.error,
+                                          size: 22,
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Text(
+                                            l10n.localeName
+                                                    .toLowerCase()
+                                                    .startsWith('mn')
+                                                ? 'Эмч нарыг ачаалахад алдаа гарлаа.'
+                                                : 'Could not load doctors.',
+                                            style: theme.textTheme.bodySmall
+                                                ?.copyWith(
+                                              color: const Color(0xFFB42318),
+                                              fontWeight: FontWeight.w700,
+                                              height: 1.35,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    SelectableText(
+                                      doctorsFetchError!,
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                        color: cs.onSurfaceVariant,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: TextButton.icon(
+                                        onPressed: isDoctorsLoading
+                                            ? null
+                                            : () => _loadDoctors(),
+                                        icon: const Icon(
+                                          Icons.refresh_rounded,
+                                          size: 18,
+                                        ),
+                                        label: Text(
+                                          l10n.localeName
+                                                  .toLowerCase()
+                                                  .startsWith('mn')
+                                              ? 'Дахин оролдох'
+                                              : 'Retry',
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                         _DoctorSelectGrid(
                           doctors: doctors,
                           selectedDoctorId: selectedDoctorId,
                           onlineUserIds: onlineIds,
                           isLoading: isDoctorsLoading,
+                          blockingError: doctorsFetchError,
                           l10n: l10n,
                           onSelect: _onSelectDoctor,
                         ),
@@ -1310,6 +1401,7 @@ class _DoctorSelectGrid extends StatelessWidget {
     required this.selectedDoctorId,
     required this.onlineUserIds,
     required this.isLoading,
+    this.blockingError,
     required this.l10n,
     required this.onSelect,
   });
@@ -1318,6 +1410,8 @@ class _DoctorSelectGrid extends StatelessWidget {
   final String? selectedDoctorId;
   final Set<String> onlineUserIds;
   final bool isLoading;
+  /// When set and [doctors] is empty, omit the large empty-state card (caller shows error UI).
+  final String? blockingError;
   final AppLocalizations l10n;
   final ValueChanged<String> onSelect;
 
@@ -1348,6 +1442,9 @@ class _DoctorSelectGrid extends StatelessWidget {
     }
 
     if (doctors.isEmpty) {
+      if (blockingError != null && blockingError!.isNotEmpty) {
+        return const SizedBox.shrink();
+      }
       return Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
