@@ -522,6 +522,22 @@ class _AppointmentList extends StatelessWidget {
                     ),
                     child: const Text('Дэлгэрэнгүй'),
                   ),
+                  OutlinedButton.icon(
+                    onPressed: () => context.go('/doctor-chat'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: ClinovaPremium.textPrimary,
+                      side: BorderSide(
+                        color:
+                            ClinovaPremium.border.withValues(alpha: 0.95)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 12),
+                    ),
+                    icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+                    label: const Text('Чат'),
+                  ),
                   FilledButton(
                     onPressed: canStart
                         ? () => onStartVisit(appointmentId)

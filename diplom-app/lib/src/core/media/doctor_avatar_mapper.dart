@@ -64,18 +64,25 @@ _ResolvedGender? _inferFromMongolianName(String doctorName) {
 ///
 /// [gender] accepts e.g. `male` / `female` / `M` / `F` / Mongolian `эрэгтэй` / `эмэгтэй`.
 /// When gender is absent, Cyrillic given-name heuristics are used, then a stable alternation by hash.
-String resolveDoctorAvatar({
-  required String doctorName,
-  String? gender,
-}) {
+String resolveDoctorAvatar({required String doctorName, String? gender}) {
   final explicit = _parseExplicitGender(gender);
   if (explicit != null) {
-    return explicit == _ResolvedGender.male ? kDoctorMaleAsset : kDoctorFemaleAsset;
+    return explicit == _ResolvedGender.male
+        ? kDoctorMaleAsset
+        : kDoctorFemaleAsset;
   }
   final inferred = _inferFromMongolianName(doctorName);
   if (inferred != null) {
-    return inferred == _ResolvedGender.male ? kDoctorMaleAsset : kDoctorFemaleAsset;
+    return inferred == _ResolvedGender.male
+        ? kDoctorMaleAsset
+        : kDoctorFemaleAsset;
   }
   final h = _stableHash(doctorName);
   return (h & 1) == 0 ? kDoctorMaleAsset : kDoctorFemaleAsset;
+}
+
+/// Optional API gender on nested `user` (or doctor) JSON.
+String? doctorGenderFromMap(Map<String, dynamic>? map) {
+  final g = map?['gender']?.toString().trim();
+  return g == null || g.isEmpty ? null : g;
 }

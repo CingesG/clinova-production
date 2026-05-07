@@ -1,13 +1,16 @@
 import 'package:diplom_app/l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/localization/context_l10n.dart';
 import '../../../core/navigation/go_router_pop.dart';
 import '../../../core/network/clinova_api.dart';
 import '../../../core/widgets/clinova_backdrop.dart';
+import '../../../core/widgets/clinova_circle_avatar.dart';
 import '../../../core/widgets/guest_auth_prompt.dart';
+import '../../../core/media/doctor_avatar_mapper.dart';
 import '../../auth/application/auth_controller.dart';
 
 class AppointmentScreen extends ConsumerStatefulWidget {
@@ -768,8 +771,9 @@ class _AppointmentScreenState extends ConsumerState<AppointmentScreen> {
                     onPressed: () => popOrGo(
                       context,
                       clinovaNavigationFallback(
-                        isAuthenticated:
-                            ref.read(authControllerProvider).isAuthenticated,
+                        isAuthenticated: ref
+                            .read(authControllerProvider)
+                            .isAuthenticated,
                         role: ref.read(authControllerProvider).user?.role,
                       ),
                     ),
@@ -1077,13 +1081,9 @@ class _AppointmentScreenState extends ConsumerState<AppointmentScreen> {
                             child: Text(l10n.aptNoPending),
                           )
                         else
-                          ...upcomingAppointments.map(
-                            (appointment) => Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: _MyAppointmentCard(
-                                appointment: appointment,
-                              ),
-                            ),
+                          ..._groupUpcomingByDoctor(
+                            context,
+                            upcomingAppointments,
                           ),
                       ],
                     ),
@@ -1096,6 +1096,72 @@ class _AppointmentScreenState extends ConsumerState<AppointmentScreen> {
       ),
     );
   }
+}
+
+List<Widget> _groupUpcomingByDoctor(
+  BuildContext context,
+  List<Map<String, dynamic>> upcomingAppointments,
+) {
+  final byDoctor = <String, List<Map<String, dynamic>>>{};
+  for (final ap in upcomingAppointments) {
+    final doc = ap['doctor'];
+    final id = doc is Map ? doc['id']?.toString() ?? '' : '';
+    final key = id.isEmpty ? '_unknown' : id;
+    byDoctor.putIfAbsent(key, () => []).add(ap);
+  }
+  final out = <Widget>[];
+  for (final e in byDoctor.entries) {
+    final first = e.value.first;
+    final doc = first['doctor'];
+    var docId = e.key;
+    var dname = 'Эмч';
+    if (doc is Map<String, dynamic>) {
+      docId = doc['id']?.toString() ?? docId;
+      final u = doc['user'];
+      if (u is Map<String, dynamic>) {
+        dname = '${u['firstName'] ?? ''} ${u['lastName'] ?? ''}'.trim();
+      }
+      if (dname.isEmpty) dname = 'Эмч';
+    }
+    out.add(
+      Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    dname,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: docId.isEmpty || docId == '_unknown'
+                      ? null
+                      : () => context.push(
+                          '/doctor-chat?doctorId=${Uri.encodeComponent(docId)}',
+                        ),
+                  icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+                  label: const Text('Чат'),
+                ),
+              ],
+            ),
+            ...e.value.map(
+              (appointment) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _MyAppointmentCard(appointment: appointment),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  return out;
 }
 
 class _BookingStepBar extends StatelessWidget {
@@ -1821,7 +1887,11 @@ class _MyAppointmentCard extends StatelessWidget {
     final start = DateTime.tryParse(appointment['startsAt']?.toString() ?? '');
     final fn = user['firstName']?.toString() ?? '';
     final ln = user['lastName']?.toString() ?? '';
+    final fullName = '$fn $ln'.trim();
     final locale = l10n.localeName;
+    final initial = fullName.isNotEmpty
+        ? String.fromCharCode(fullName.runes.first).toUpperCase()
+        : '?';
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -1832,14 +1902,36 @@ class _MyAppointmentCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            service['name']?.toString() ?? l10n.consultationFallback,
-            style: Theme.of(context).textTheme.titleMedium,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClinovaCircleAvatar(
+                radius: kClinovaDoctorListAvatarRadius,
+                initialsText: initial,
+                backgroundColor: kClinovaFlatDoctorAvatarBackground,
+                foregroundColor: const Color(0xFF475569),
+                doctorUseFlatAssetOnly: true,
+                doctorDisplayName: fullName.isEmpty ? initial : fullName,
+                doctorGender: doctorGenderFromMap(user),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      service['name']?.toString() ?? l10n.consultationFallback,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(l10n.aptDoctorLabel(fn, ln)),
+                    const SizedBox(height: 4),
+                    Text(branch['name']?.toString() ?? ''),
+                  ],
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 6),
-          Text(l10n.aptDoctorLabel(fn, ln)),
-          const SizedBox(height: 4),
-          Text(branch['name']?.toString() ?? ''),
           const SizedBox(height: 8),
           Text(
             start != null

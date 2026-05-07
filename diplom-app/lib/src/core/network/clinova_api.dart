@@ -299,6 +299,12 @@ class ClinovaApi {
     return _asList(response.data).map(_withAbsoluteDoctorAvatar).toList();
   }
 
+  /// Public doctor profile (`DoctorProfile.id`).
+  Future<Map<String, dynamic>> getDoctor(String doctorProfileId) async {
+    final response = await _dio.get('/doctors/$doctorProfileId');
+    return _withAbsoluteDoctorAvatar(_asMap(response.data));
+  }
+
   Future<List<Map<String, dynamic>>> getDoctorPatients() async {
     final response = await _dio.get('/doctors/me/patients');
     return _asList(response.data).map(_withAbsoluteDoctorAvatar).toList();

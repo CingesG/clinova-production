@@ -458,30 +458,60 @@ export class DoctorService {
       }
     }
 
-    await this.prisma.$transaction(async (tx) => {
-      await tx.user.update({
-        where: { id: doctor.userId },
-        data: {
-          firstName: input.firstName,
-          lastName: input.lastName,
-          ...phonePayload,
-          avatarUrl: input.avatarUrl,
-          branchId: input.branchId,
-        },
-      });
+    const userUpdate: Prisma.UserUpdateInput = {};
+    if (input.firstName !== undefined) {
+      userUpdate.firstName = input.firstName;
+    }
+    if (input.lastName !== undefined) {
+      userUpdate.lastName = input.lastName;
+    }
+    if (Object.keys(phonePayload).length > 0) {
+      Object.assign(userUpdate, phonePayload);
+    }
+    if (input.avatarUrl !== undefined) {
+      userUpdate.avatarUrl = input.avatarUrl;
+    }
+    if (input.branchId !== undefined) {
+      userUpdate.branch = { connect: { id: input.branchId } };
+    }
 
-      await tx.doctorProfile.update({
-        where: { id },
-        data: {
-          branchId: input.branchId,
-          departmentId: input.departmentId,
-          bio: input.bio,
-          experienceYears: input.experienceYears,
-          consultationFee: input.consultationFee,
-          avatarUrl: input.avatarUrl,
-          active: input.active,
-        },
-      });
+    const profileUpdate: Prisma.DoctorProfileUpdateInput = {};
+    if (input.branchId !== undefined) {
+      profileUpdate.branch = { connect: { id: input.branchId } };
+    }
+    if (input.departmentId !== undefined) {
+      profileUpdate.department = { connect: { id: input.departmentId } };
+    }
+    if (input.bio !== undefined) {
+      profileUpdate.bio = input.bio;
+    }
+    if (input.experienceYears !== undefined) {
+      profileUpdate.experienceYears = input.experienceYears;
+    }
+    if (input.consultationFee !== undefined) {
+      profileUpdate.consultationFee = input.consultationFee;
+    }
+    if (input.avatarUrl !== undefined) {
+      profileUpdate.avatarUrl = input.avatarUrl;
+    }
+    if (input.active !== undefined) {
+      profileUpdate.active = input.active;
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      if (Object.keys(userUpdate).length > 0) {
+        await tx.user.update({
+          where: { id: doctor.userId },
+          data: userUpdate,
+        });
+      }
+
+      if (Object.keys(profileUpdate).length > 0) {
+        await tx.doctorProfile.update({
+          where: { id },
+          data: profileUpdate,
+        });
+      }
 
       if (input.serviceIds) {
         await tx.doctorService.deleteMany({

@@ -5,7 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/router.dart';
 import '../../features/auth/application/auth_controller.dart';
+import '../notifications/clinova_realtime_toast.dart';
+import '../notifications/realtime_notification_bridge.dart';
 import 'doctor_chat_dm_room.dart';
+import 'online_presence_provider.dart';
 import 'pending_inbound_call_provider.dart';
 import 'realtime_service.dart';
 
@@ -24,14 +27,63 @@ class RealtimeConnectionScope extends ConsumerStatefulWidget {
 class _RealtimeConnectionScopeState
     extends ConsumerState<RealtimeConnectionScope> {
   StreamSubscription<Map<String, dynamic>>? _offerNavSub;
+  StreamSubscription<Map<String, dynamic>>? _chatToastSub;
+  StreamSubscription<Map<String, dynamic>>? _presenceSub;
+  StreamSubscription<Map<String, dynamic>>? _apptBookSub;
+  StreamSubscription<Map<String, dynamic>>? _apptUpdatedSub;
 
   @override
   void initState() {
     super.initState();
     _syncAuth(ref.read(authControllerProvider));
-    _offerNavSub = ref.read(realtimeServiceProvider).callSignalStream.listen(
-          _navigateInboundOfferIfAwayFromChat,
-        );
+    final rt = ref.read(realtimeServiceProvider);
+    _offerNavSub = rt.callSignalStream.listen(
+      _navigateInboundOfferIfAwayFromChat,
+    );
+    _chatToastSub = rt.chatMessageStream.listen(_onChatMessageToast);
+    _presenceSub = rt.presenceStream.listen(_onPresence);
+    _apptBookSub = rt.appointmentBookedStream.listen(_onAppointmentBooked);
+    _apptUpdatedSub = rt.appointmentUpdatedStream.listen(
+      _onAppointmentUpdated,
+    );
+  }
+
+  void _onChatMessageToast(Map<String, dynamic> data) {
+    handleGlobalChatMessageToast(
+      ref,
+      data,
+      ref.read(appRouterProvider),
+    );
+  }
+
+  void _onPresence(Map<String, dynamic> data) {
+    final uid = data['userId']?.toString() ?? '';
+    final st = data['status']?.toString() ?? '';
+    ref
+        .read(onlineUserIdsProvider.notifier)
+        .applyPresence(userId: uid, status: st);
+  }
+
+  void _onAppointmentBooked(dynamic raw) {
+    if (raw is! Map) return;
+    unawaited(
+      handleAppointmentRealtimeToast(
+        ref,
+        Map<String, dynamic>.from(raw),
+        'booked',
+      ),
+    );
+  }
+
+  void _onAppointmentUpdated(dynamic raw) {
+    if (raw is! Map) return;
+    unawaited(
+      handleAppointmentRealtimeToast(
+        ref,
+        Map<String, dynamic>.from(raw),
+        'updated',
+      ),
+    );
   }
 
   void _syncAuth(AuthState auth) {
@@ -88,6 +140,10 @@ class _RealtimeConnectionScopeState
   @override
   void dispose() {
     _offerNavSub?.cancel();
+    _chatToastSub?.cancel();
+    _presenceSub?.cancel();
+    _apptBookSub?.cancel();
+    _apptUpdatedSub?.cancel();
     super.dispose();
   }
 
@@ -97,6 +153,6 @@ class _RealtimeConnectionScopeState
       authControllerProvider,
       (prev, next) => _syncAuth(next),
     );
-    return widget.child;
+    return ClinovaRealtimeToastLayer(child: widget.child);
   }
 }

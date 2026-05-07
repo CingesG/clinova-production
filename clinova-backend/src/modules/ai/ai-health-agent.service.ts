@@ -100,13 +100,15 @@ export class AiHealthAgentService {
   private resolveOpenAiModel(forVision: boolean): string {
     const visionModel = this.config.get<string>('OPENAI_VISION_MODEL')?.trim();
     const primary = this.config.get<string>('OPENAI_MODEL')?.trim();
+    /** Production default: GPT-4.1 family (override via env). */
+    const fallback = 'gpt-4.1';
     if (forVision) {
       if (visionModel) return visionModel;
       if (primary) return primary;
-      return 'gpt-4o-mini';
+      return fallback;
     }
     if (primary) return primary;
-    return 'gpt-4o-mini';
+    return fallback;
   }
 
   /** Add Mongolian + clinical hints so Prisma search finds dental / gastro / OB-GYN rows. */
@@ -139,7 +141,15 @@ export class AiHealthAgentService {
     private readonly appointments: AppointmentService,
   ) {
     const apiKey = this.config.get<string>('OPENAI_API_KEY');
-    if (apiKey) this.client = new OpenAI({ apiKey });
+    const timeoutRaw = this.config.get<string>('OPENAI_REQUEST_TIMEOUT_MS');
+    const timeoutMs = parseInt(timeoutRaw ?? '120000', 10);
+    if (apiKey) {
+      this.client = new OpenAI({
+        apiKey,
+        timeout: Number.isFinite(timeoutMs) && timeoutMs >= 10_000 ? timeoutMs : 120_000,
+        maxRetries: 1,
+      });
+    }
   }
 
   async runChat(
@@ -276,12 +286,18 @@ export class AiHealthAgentService {
   ): Promise<ClinovaAgentResponse> {
     const hasVision = Boolean(visionImages?.length);
     const model = this.resolveOpenAiModel(hasVision);
-    const historyText = history
-      .slice(-20)
+    const historySlice = history.slice(-20);
+    const historyText = historySlice
       .map((h) => `${h.role}: ${h.content}`)
       .join('\n');
+    const sessionDigest = this.buildSessionDigest(historySlice);
 
-    const userContent = this.buildUserMultimodalContent(historyText, text, visionImages);
+    const userContent = this.buildUserMultimodalContent(
+      historyText,
+      sessionDigest,
+      text,
+      visionImages,
+    );
 
     try {
       const inferenceOpts = this.openAiInferenceOptions();
@@ -329,13 +345,29 @@ export class AiHealthAgentService {
     }
   }
 
+  /** Last few user lines so the model can link "өчигдөр" → "одоо" style follow-ups. */
+  private buildSessionDigest(history: Array<{ role: string; content: string }>): string {
+    const userLines = history
+      .filter((h) => String(h.role).toLowerCase() === 'user')
+      .map((h) => String(h.content ?? '').trim())
+      .filter((s) => s.length > 0)
+      .slice(-4);
+    if (userLines.length === 0) return '';
+    return userLines.map((s, i) => `${i + 1}. ${s}`).join('\n');
+  }
+
   /** Text-only or multimodal (OpenAI Responses `input_*` blocks). */
   private buildUserMultimodalContent(
     historyText: string,
+    sessionDigest: string,
     text: string,
     images?: AgentImageInput[],
   ): string | Array<Record<string, unknown>> {
-    const header = `conversation_history:\n${historyText}\n\nuser_message:\n${text}`;
+    const digestBlock =
+      sessionDigest.length > 0
+        ? `recent_user_turns_for_continuity:\n${sessionDigest}\n\n`
+        : '';
+    const header = `${digestBlock}conversation_history:\n${historyText}\n\nuser_message:\n${text}`;
     const list = images?.filter(Boolean) ?? [];
     if (!list.length) return header;
 
@@ -507,7 +539,7 @@ export class AiHealthAgentService {
       metadata: {
         source: 'local-fallback',
         reason: this.extractShortError(error),
-        openAiModel: this.config.get<string>('OPENAI_MODEL') ?? 'gpt-4o-mini',
+        openAiModel: this.config.get<string>('OPENAI_MODEL') ?? 'gpt-4.1',
         hasUserId: Boolean(userId),
         hadVision: Boolean(hadVision),
       },
@@ -547,6 +579,19 @@ export class AiHealthAgentService {
       parameters,
     });
     return [
+      f(
+        'listDoctorsByKeyword',
+        'Хэрэглэгч тодорхой serviceId-гүйгээр "хүүхдийн эмч", "арьс", "дотоод" гэх мэт чиглэлээр эмч хайх, эсвэл эхний үе шатанд эмчийн жагсаалт харуулах.',
+        {
+          type: 'object',
+          properties: {
+            keyword: { type: 'string' },
+            branchId: { type: 'string' },
+          },
+          required: ['keyword'],
+          additionalProperties: false,
+        },
+      ),
       f(
         'searchServicesBySymptoms',
         'Clinova үйлчилгээ/тасгаар шинж тэмдэг, зорилгоор хайлт. Хэрэглэгчийн биеийн тухай бичвэрээр дууд. ID зохиохгүй.',
@@ -635,6 +680,8 @@ export class AiHealthAgentService {
     currentUserId?: string,
   ): Promise<Record<string, unknown>> {
     switch (name) {
+      case 'listDoctorsByKeyword':
+        return this.listDoctorsByKeyword(String(args.keyword ?? ''), args.branchId?.toString());
       case 'searchServicesBySymptoms':
         return this.searchServicesBySymptoms(String(args.symptoms ?? ''), args.branchId?.toString());
       case 'searchDoctorsByService':
@@ -708,6 +755,64 @@ export class AiHealthAgentService {
         branchName: s.branch.name,
         departmentId: s.departmentId,
         departmentName: s.department.name,
+      })),
+    };
+  }
+
+  private async listDoctorsByKeyword(keyword: string, branchId?: string) {
+    const expanded = this.expandSymptomSearchForClinova(keyword);
+    const keys = this.toSearchableText(expanded).split(/\s+/).filter((x) => x.length >= 2).slice(0, 8);
+    if (keys.length === 0) return { items: [] as Record<string, unknown>[] };
+
+    const items = await this.prisma.doctorProfile.findMany({
+      where: {
+        active: true,
+        branchId: branchId || undefined,
+        OR: [
+          ...keys.map((k) => ({
+            department: { name: { contains: k, mode: 'insensitive' as const } },
+          })),
+          ...keys.map((k) => ({
+            user: {
+              OR: [
+                { firstName: { contains: k, mode: 'insensitive' as const } },
+                { lastName: { contains: k, mode: 'insensitive' as const } },
+              ],
+            },
+          })),
+          ...keys.flatMap((k) => [
+            {
+              services: {
+                some: {
+                  service: {
+                    OR: [
+                      { name: { contains: k, mode: 'insensitive' as const } },
+                      { description: { contains: k, mode: 'insensitive' as const } },
+                    ],
+                  },
+                },
+              },
+            },
+          ]),
+        ],
+      },
+      include: {
+        user: { select: { firstName: true, lastName: true } },
+        branch: { select: { name: true } },
+        department: { select: { name: true } },
+        services: { take: 1, select: { serviceId: true } },
+      },
+      take: 8,
+      orderBy: { experienceYears: 'desc' },
+    });
+
+    return {
+      items: items.map((d) => ({
+        id: d.id,
+        name: `${d.user.firstName ?? ''} ${d.user.lastName ?? ''}`.trim(),
+        specialty: d.department.name,
+        branch: d.branch.name,
+        serviceId: d.services[0]?.serviceId ?? null,
       })),
     };
   }
@@ -868,14 +973,44 @@ export class AiHealthAgentService {
     return 'general';
   }
 
-  private normalizeLlmActionRoute(type: string, route: string): string | null {
-    const t = type.trim().toUpperCase();
+  private normalizeLlmActionRoute(
+    type: string,
+    route: string,
+    params?: Record<string, unknown>,
+  ): string | null {
+    const t = type.trim().toUpperCase().replace(/-/g, '_');
     let r = route.trim();
+    const doctorProfileId = (): string => {
+      if (!params) return '';
+      const a = params['doctorId'] ?? params['doctorProfileId'];
+      return a != null ? String(a).trim() : '';
+    };
+    const did = doctorProfileId();
+
     if (r === '/doctors' || r.toLowerCase() === 'doctors' || r.toLowerCase() === '/doctors') {
       r = '/branches';
     }
     if (r.startsWith('emergency:')) return r;
+    if (r.startsWith('/doctor-profile/')) return r;
     if (r.startsWith('/')) return r;
+
+    if (
+      (t === 'OPEN_DOCTOR_PROFILE' ||
+        t === 'VIEW_DOCTOR_PROFILE' ||
+        type.toLowerCase() === 'open_doctor_profile') &&
+      did
+    ) {
+      return `/doctor-profile/${did}`;
+    }
+    if (
+      (t === 'OPEN_DOCTOR_CHAT' ||
+        t === 'START_DOCTOR_CHAT' ||
+        type.toLowerCase() === 'open_chat_doctor') &&
+      did
+    ) {
+      return '/doctor-chat';
+    }
+
     if (t === 'BOOK_APPOINTMENT' || t === 'BOOKING') return '/appointments/book';
     if (t === 'APPOINTMENT_LANDING' || t === 'SHOW_AVAILABLE_TIMES') return '/appointments-landing';
     if (
@@ -886,9 +1021,14 @@ export class AiHealthAgentService {
     ) {
       return '/branches';
     }
-    if (t === 'OPEN_CHAT' || t === 'OPEN_PATIENT_CHAT' || r.toLowerCase() === 'chat') return '/chat-landing';
+    if (t === 'OPEN_CHAT' || t === 'OPEN_PATIENT_CHAT' || r.toLowerCase() === 'chat') {
+      return did ? '/doctor-chat' : '/chat-landing';
+    }
     if (t === 'OPEN_EMERGENCY_PAGE' || r.toLowerCase() === 'emergency') return '/emergency';
+    if (t === 'VIEW_PROFILE' || t === 'OPEN_USER_PROFILE' || r.toLowerCase() === 'profile')
+      return '/profile';
     if (t === 'VIEW_MY_APPOINTMENTS' || t === 'MY_APPOINTMENTS') return '/appointments';
+    if (t === 'VIEW_HOME' || r.toLowerCase() === 'home') return '/home';
     if (r.length > 0 && r.startsWith('appointments')) return `/${r.replace(/^\/+/, '')}`;
     return null;
   }
@@ -900,12 +1040,12 @@ export class AiHealthAgentService {
       if (!label) continue;
       const type = String(it.type ?? 'CUSTOM').trim() || 'CUSTOM';
       const rawRoute = String(it.route ?? '').trim();
-      const route = this.normalizeLlmActionRoute(type, rawRoute);
-      if (!route) continue;
       const params =
         it.params != null && typeof it.params === 'object' && !Array.isArray(it.params)
           ? (it.params as Record<string, unknown>)
           : {};
+      const route = this.normalizeLlmActionRoute(type, rawRoute, params);
+      if (!route) continue;
       out.push({
         type,
         label,
@@ -974,7 +1114,7 @@ export class AiHealthAgentService {
     const imageAnalysisDisclaimer =
       (intent === 'image_analysis' || Boolean(opts?.hadVision)) && intent !== 'emergency';
 
-    const modelTag = opts?.model ?? this.config.get<string>('OPENAI_MODEL') ?? 'gpt-4o-mini';
+    const modelTag = opts?.model ?? this.config.get<string>('OPENAI_MODEL') ?? 'gpt-4.1';
 
     return {
       answerText: reply,
@@ -1326,10 +1466,15 @@ MULTIMODAL (зураг):
         ? 'Default to clear English unless the user writes Mongolian — then mirror Mongolian for natural phrasing.'
         : 'Хэрэглэгч Монголоор бичсэн бол хариултыг **байгалийн**, богино, ойлгомжтой монголоор бич (кирилл эсвэл латин). English асуултад товч, тодорхой англиар хариулж болно.';
 
-    return `You are **Clinova AI** — a smart healthcare assistant inside the **Clinova** hospital/clinic platform.
-You help patients understand symptoms (including general health education), analyze uploaded images **preliminarily**, choose departments, find doctors, prepare for visits, book appointments, and use the app. You **do not replace** a licensed clinician.
+    return `You are **Clinova AI** — a multimodal **healthcare workflow agent** inside the **Clinova** hospital/clinic platform (not a simple chatbot).
+You help patients with: symptom triage (preliminary only), Mongolian/English mixed chat, image understanding, department/doctor selection, booking preparation, opening chat/profile/appointments in the app, and safe escalation to emergency care. You **do not replace** a licensed clinician.
 
 ${lang}
+
+MONGOLIAN INPUT STYLES (treat as normal patient text):
+- Cyrillic, Latin/Romanized, typos, and very short messages (e.g. "tolgoi aimar uwduud bn", "haluurad bna", "zurag harsan uu", "ene em deer yu gej bga ym", "tsag awaad uguu", "emchtei holboj uguuch").
+- Infer intent; ask 1–3 focused follow-ups only when needed.
+- When the user asks to **take an action** ("цаг аваад өг", "чат нээ", "миний цаг", "профайл нээгээд"), combine **tools** for real data with **suggestedActions** so the app can navigate (see below).
 
 VOICE & STRUCTURE:
 - Товч, итгэлтэй, дулаан хэлбэр — "роботоор" бичихгүй. Эхний мөрөнд гол санаа.
@@ -1344,14 +1489,23 @@ OFF-TOPIC:
 - Нэг богино мөрөөр хариулаад Clinova/эрүүл мэнд рүү зөөлөн буцаана.
 
 SAFETY:
-- Эцсийн онош, "тад энэ өвчтэй" гэх баталгаа хоригтой — зөвхөн "байж болзошгүй", "эмчид үзүүлэх зөвлөгөө".
-- Эмийн **нэршил, тун, хэрхэн хэрэглэх** — битгий зааж өг; эмч/эмийн сан руу чиглүүл.
-- Зургийн дүгнэлт болон шинжийн үнэлгээ нь **урьдчилсан** — эмчийн үзлэгийг орлодоггүй гэдгийг хариултад тусгах (1 мөрөөр болно).
-- Emergency (цээж өвдөх, амьсгал даврах, инсультын шинж, их цус алдалт, ухаан алдах, хүнд харшил, жирэмсний яаралтай нөхцөл, хүүхдийн хүнд халуурал/амьсгал, өөрийгөө хорлох санаа): urgency = "emergency", товч яаралтай заавар, **103**. Энгийн чатыг үргэлжлүүлэхгүй.
+- **Never** state a guaranteed/final diagnosis. Use "байж болзошгүй", "эмчид үзүүлэхийг зөвлөж байна".
+- **Never** prescribe medication **names, doses, or regimens**. Direct to a clinician or pharmacy review.
+- For **every** image-based or symptom-based assessment, include one short line in answerText (Mongolian) such as: "Энэ нь эцсийн онош биш; эмчийн үзлэг шаардлагатай."
+- Emergency (цээж өвдөх, амьсгал даврах, инсультын шинж, их цус алдалт, ухаан алдах, хүнд харшил, жирэмсний яаралтай нөхцөл, хүүхдийн хүнд халуурал/амьсгал, өөрийгөө хорлох санаа): urgency = "emergency", **prioritize** 103 / emergency CTAs, **do not** chat through the emergency.
 
-TOOLS (жинхэнэ өгөгдөл):
-- Хэрэглэгчийн зорилгоор **searchServicesBySymptoms**, **searchDoctorsByService**, **findAvailableSlots**, **getBranches**, шаардлагатай **getUserAppointments** дууд. ID болон цагийг зохиохгүй — зөвхөн хариултаас.
-- "Шүд", "гэдэс", "жирэмсэн" гэх мэтээр тасаг тааруулж хайлтын текстэд багтаагаарай.
+SESSION MEMORY:
+- Use **conversation_history** and **recent_user_turns_for_continuity** to link earlier symptoms with new messages (e.g. fever yesterday → cough today).
+
+TOOLS (real data — call when useful):
+- **listDoctorsByKeyword** when user asks for a specialty or "ямар эмч" before you have a serviceId.
+- **searchServicesBySymptoms**, **searchDoctorsByService**, **findAvailableSlots**, **getBranches**, **getUserAppointments** (for "миний цаг"), **createAppointment** only when user clearly confirms slot + auth context.
+- Use tool results to fill **recommendedDoctors**, **recommendedServices**, **availableSlots** in JSON (ids from tools only, never invent).
+
+APP NAVIGATION (suggestedActions — client executes):
+- Include 1–4 high-value buttons when relevant. **type** examples: OPEN_DOCTOR_PROFILE (params.doctorId), OPEN_DOCTOR_CHAT (params.doctorId), BOOK_APPOINTMENT, VIEW_MY_APPOINTMENTS, OPEN_USER_PROFILE, VIEW_HOME.
+- **route** may be full path OR empty if **type** implies it; for doctor profile use params.doctorId with type OPEN_DOCTOR_PROFILE.
+- Booking: route "/appointments/book" with params branchId, departmentId, serviceId, doctorId when known.
 
 Output **STRICT JSON ONLY** (no markdown). Schema:
 {
@@ -1364,14 +1518,14 @@ Output **STRICT JSON ONLY** (no markdown). Schema:
   "followUpQuestions": string[] (хамгийн ихдээ 3, богино),
   "suggestions": string[] (chip — followUpQuestions-тай давхцахгүй бол ялгаатай байж болно),
   "suggestedActions": [
-    { "label": string, "type": string, "route": string, "params": object? }
+    { "label": string, "type": string, "route": string, "params": { "doctorId"?: string, "branchId"?: string, "serviceId"?: string, "departmentId"?: string } }
   ],
   "recommendedServices": object[],
   "recommendedDoctors": object[],
   "availableSlots": object[]
 }
 riskLevel = urgency (lowercase) утгаар ижил байлгана.
-Маршрутын жишээ: "/appointments/book", "/branches", "/emergency", "/appointments" (миний цаг), "/chat-landing", "/appointments-landing".
+Маршрутын жишээ: "/appointments/book", "/branches", "/emergency", "/appointments", "/profile", "/home", "/doctor-profile/<id>", "/doctor-chat" (doctorId params), "/chat-landing".
 ${visionBlock}
 languageHint: ${languageHint}.`;
   }

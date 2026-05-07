@@ -1,17 +1,30 @@
 import 'package:diplom_app/src/core/config/app_config.dart';
+import 'package:diplom_app/src/core/media/doctor_avatar_mapper.dart';
 
 const kClinovaFlutterAssetPrefix = 'flutter-asset:';
 
-/// Returns a Flutter [Image.asset] path when [raw] refers to a bundled doctor
-/// portrait (`flutter-asset:...` or legacy `/uploads/image/doctor-NN.*`).
+/// Returns a Flutter [Image.asset] path when [raw] refers to bundled media.
+///
+/// Legacy `doctor-NN` upload paths and stock JPEGs resolve to flat
+/// [kDoctorMaleAsset] / [kDoctorFemaleAsset] (no photorealistic portraits).
 String? clinovaBundledAvatarAssetPath(String? raw) {
   final t = raw?.trim();
   if (t == null || t.isEmpty) return null;
   if (t.startsWith(kClinovaFlutterAssetPrefix)) {
     return t.substring(kClinovaFlutterAssetPrefix.length);
   }
-  if (t.startsWith('assets/images/doctors/')) {
+  if (t.startsWith('assets/images/avatars/')) {
     return t;
+  }
+  if (t.startsWith('assets/images/doctors/')) {
+    final m = RegExp(
+      r'doctor-(\d+)\.(?:png|jpe?g|webp)',
+      caseSensitive: false,
+    ).firstMatch(t);
+    if (m != null) {
+      final n = int.tryParse(m.group(1)!) ?? 0;
+      return (n & 1) == 1 ? kDoctorMaleAsset : kDoctorFemaleAsset;
+    }
   }
   final lower = t.toLowerCase();
   final uploadsIdx = lower.indexOf('/uploads/image/doctor-');
@@ -24,7 +37,7 @@ String? clinovaBundledAvatarAssetPath(String? raw) {
     if (m != null) {
       final n = int.tryParse(m.group(1)!);
       if (n != null && n >= 1 && n <= 8) {
-        return 'assets/images/doctors/doctor-${n.toString().padLeft(2, '0')}.jpg';
+        return (n & 1) == 1 ? kDoctorMaleAsset : kDoctorFemaleAsset;
       }
     }
   }
@@ -35,7 +48,7 @@ String? clinovaBundledAvatarAssetPath(String? raw) {
   if (tail != null) {
     final n = int.tryParse(tail.group(2)!);
     if (n != null && n >= 1 && n <= 8) {
-      return 'assets/images/doctors/doctor-${n.toString().padLeft(2, '0')}.jpg';
+      return (n & 1) == 1 ? kDoctorMaleAsset : kDoctorFemaleAsset;
     }
   }
   return null;

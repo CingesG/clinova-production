@@ -120,6 +120,10 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     };
     client.to(data.roomId).emit('chat:message', payload);
     client.emit('chat:message', payload);
+    const receiverId = data.receiverId?.trim();
+    if (receiverId) {
+      this.server.to(this.userRoomName(receiverId)).emit('chat:message', payload);
+    }
     return { ok: true };
   }
 
@@ -201,10 +205,34 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   emitAppointmentBooked(appointment: unknown) {
     this.server.emit('appointments:booked', appointment);
+    const a = appointment as {
+      patient?: { user?: { id?: string } };
+      doctor?: { user?: { id?: string } };
+    };
+    const pid = a.patient?.user?.id?.trim();
+    const did = a.doctor?.user?.id?.trim();
+    if (pid) {
+      this.server.to(this.userRoomName(pid)).emit('appointments:booked', appointment);
+    }
+    if (did) {
+      this.server.to(this.userRoomName(did)).emit('appointments:booked', appointment);
+    }
   }
 
   emitAppointmentUpdated(appointment: unknown) {
     this.server.emit('appointments:updated', appointment);
+    const a = appointment as {
+      patient?: { user?: { id?: string } };
+      doctor?: { user?: { id?: string } };
+    };
+    const pid = a.patient?.user?.id?.trim();
+    const did = a.doctor?.user?.id?.trim();
+    if (pid) {
+      this.server.to(this.userRoomName(pid)).emit('appointments:updated', appointment);
+    }
+    if (did) {
+      this.server.to(this.userRoomName(did)).emit('appointments:updated', appointment);
+    }
   }
 
   private getUserId(client: Socket) {

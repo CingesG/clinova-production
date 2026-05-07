@@ -19,11 +19,22 @@ class RealtimeService {
       StreamController<Map<String, dynamic>>.broadcast();
   final StreamController<Map<String, dynamic>> _callSignalStream =
       StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<Map<String, dynamic>> _presenceStream =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<Map<String, dynamic>> _appointmentBookedStream =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<Map<String, dynamic>> _appointmentUpdatedStream =
+      StreamController<Map<String, dynamic>>.broadcast();
 
   /// One broadcast stream for all `chat:message` events; filter by `roomId` in the listener.
   Stream<Map<String, dynamic>> get chatMessageStream => _chatStream.stream;
   Stream<Map<String, dynamic>> get typingStream => _typingStream.stream;
   Stream<Map<String, dynamic>> get callSignalStream => _callSignalStream.stream;
+  Stream<Map<String, dynamic>> get presenceStream => _presenceStream.stream;
+  Stream<Map<String, dynamic>> get appointmentBookedStream =>
+      _appointmentBookedStream.stream;
+  Stream<Map<String, dynamic>> get appointmentUpdatedStream =>
+      _appointmentUpdatedStream.stream;
 
   void connect({String? userId}) {
     final normalizedUserId = (userId ?? '').trim();
@@ -54,11 +65,23 @@ class RealtimeService {
       ..off('call:answer')
       ..off('call:ice')
       ..off('call:end')
+      ..off('presence:changed')
+      ..off('appointments:booked')
+      ..off('appointments:updated')
       ..on('chat:message', (data) {
         _chatStream.add(Map<String, dynamic>.from(data as Map));
       })
       ..on('chat:typing', (data) {
         _typingStream.add(Map<String, dynamic>.from(data as Map));
+      })
+      ..on('presence:changed', (data) {
+        _presenceStream.add(Map<String, dynamic>.from(data as Map));
+      })
+      ..on('appointments:booked', (data) {
+        _appointmentBookedStream.add(Map<String, dynamic>.from(data as Map));
+      })
+      ..on('appointments:updated', (data) {
+        _appointmentUpdatedStream.add(Map<String, dynamic>.from(data as Map));
       })
       ..on('call:offer', (data) {
         _callSignalStream.add({'event': 'call:offer', ...Map<String, dynamic>.from(data as Map)});
@@ -178,5 +201,8 @@ class RealtimeService {
     _chatStream.close();
     _typingStream.close();
     _callSignalStream.close();
+    _presenceStream.close();
+    _appointmentBookedStream.close();
+    _appointmentUpdatedStream.close();
   }
 }

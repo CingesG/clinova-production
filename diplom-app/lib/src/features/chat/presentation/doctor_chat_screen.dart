@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -18,10 +19,12 @@ import '../../../core/formatting/contact_display.dart';
 import '../../../core/localization/context_l10n.dart';
 import '../../../core/navigation/go_router_pop.dart';
 import '../../../core/media/clinova_gallery_image.dart';
+import '../../../core/media/doctor_avatar_mapper.dart';
 import '../../../core/network/clinova_api.dart';
 import '../../../core/network/doctor_chat_dm_room.dart';
 import '../../../core/network/pending_inbound_call_provider.dart';
 import '../../../core/network/realtime_service.dart';
+import '../../../core/network/online_presence_provider.dart';
 import '../../../core/widgets/clinova_backdrop.dart';
 import '../../../core/widgets/clinova_circle_avatar.dart';
 import '../../auth/application/auth_controller.dart';
@@ -122,7 +125,9 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
   String? _normalizeAttachmentUrl(String? raw) {
     final value = raw?.trim();
     if (value == null || value.isEmpty) return null;
-    if (value.startsWith('http://') || value.startsWith('https://')) return value;
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return value;
+    }
     final base = Uri.tryParse(AppConfig.apiBaseUrl);
     if (base == null) return value;
     final fixedPath = value.startsWith('/') ? value : '/$value';
@@ -139,7 +144,11 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
     return value;
   }
 
-  String _contactSubtitle(Map<String, dynamic> contact, bool isDoctorRole, String locale) {
+  String _contactSubtitle(
+    Map<String, dynamic> contact,
+    bool isDoctorRole,
+    String locale,
+  ) {
     if (isDoctorRole) {
       final raw = contact['user'];
       Map<String, dynamic>? u;
@@ -150,8 +159,9 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
       }
       final phoneLabel = displayMnRegisteredPhone(u);
       final svc = contact['serviceName']?.toString().trim() ?? '';
-      final specialty =
-          svc.isNotEmpty ? _localizedSpecialty(svc, locale) : 'Өвчтөн';
+      final specialty = svc.isNotEmpty
+          ? _localizedSpecialty(svc, locale)
+          : 'Өвчтөн';
       return '$specialty · Өвчтөний утас: $phoneLabel';
     }
     final dept = contact['department'];
@@ -167,9 +177,13 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
     return id;
   }
 
-  String? _contactKeyForDoctor(Map<String, dynamic> contact, bool isDoctorRole) {
+  String? _contactKeyForDoctor(
+    Map<String, dynamic> contact,
+    bool isDoctorRole,
+  ) {
     if (isDoctorRole) {
-      final id = contact['patientUserId']?.toString() ?? contact['id']?.toString();
+      final id =
+          contact['patientUserId']?.toString() ?? contact['id']?.toString();
       return (id == null || id.isEmpty) ? null : id;
     }
     final id = contact['id']?.toString();
@@ -339,7 +353,9 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
   }
 
   Future<void> _startWebRtcCall({required bool video}) async {
-    if (_patientUserId == null || selectedDoctor == null || activeRoomId.isEmpty) {
+    if (_patientUserId == null ||
+        selectedDoctor == null ||
+        activeRoomId.isEmpty) {
       return;
     }
     final peer = _doctorUserId(selectedDoctor!);
@@ -350,9 +366,9 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
       await rtc.startOutbound(video: video);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Дуудлага эхлүүлэхэд алдаа: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Дуудлага эхлүүлэхэд алдаа: $e')));
     }
   }
 
@@ -365,14 +381,14 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
         suggestedName: fileHint.isNotEmpty ? fileHint : 'clinova_file',
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Файл хадгалагдлаа.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Файл хадгалагдлаа.')));
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Татахад алдаа гарлаа.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Татахад алдаа гарлаа.')));
     }
   }
 
@@ -539,7 +555,8 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
     String room = '';
     if (isDoctorRole) {
       final myDoctorProfileId = user?.doctorProfileId?.trim() ?? '';
-      final patientUserId = doctor['patientUserId']?.toString().trim() ??
+      final patientUserId =
+          doctor['patientUserId']?.toString().trim() ??
           _doctorUserId(doctor)?.trim() ??
           '';
       if (myDoctorProfileId.isEmpty || patientUserId.isEmpty) return;
@@ -566,7 +583,9 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
     });
 
     ref.read(realtimeServiceProvider).joinRoom(room);
-    ref.read(realtimeServiceProvider).joinCall(room, myUserId, callType: 'voice');
+    ref
+        .read(realtimeServiceProvider)
+        .joinCall(room, myUserId, callType: 'voice');
 
     try {
       final history = await ref.read(clinovaApiProvider).getChatMessages(room);
@@ -577,10 +596,7 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
           ..addAll(history);
         final key = _contactKeyForDoctor(doctor, isDoctorRole);
         if (key != null) {
-          unreadByContact = {
-            ...unreadByContact,
-            key: 0,
-          };
+          unreadByContact = {...unreadByContact, key: 0};
         }
         loadingMessages = false;
       });
@@ -683,7 +699,9 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
   }
 
   Future<void> _sendPickedImage() async {
-    if (activeRoomId.isEmpty || _patientUserId == null || _attachmentBusy) return;
+    if (activeRoomId.isEmpty || _patientUserId == null || _attachmentBusy) {
+      return;
+    }
     setState(() => _attachmentBusy = true);
     try {
       final picked = await pickClinovaGalleryJpeg();
@@ -711,7 +729,9 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
     String messageType = 'FILE',
     bool audioOnly = false,
   }) async {
-    if (activeRoomId.isEmpty || _patientUserId == null || _attachmentBusy) return;
+    if (activeRoomId.isEmpty || _patientUserId == null || _attachmentBusy) {
+      return;
+    }
     setState(() => _attachmentBusy = true);
     try {
       final result = await _pickFileSafely(
@@ -820,7 +840,9 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Файл илгээх үед алдаа гарлаа. Дахин оролдоно уу.')),
+        const SnackBar(
+          content: Text('Файл илгээх үед алдаа гарлаа. Дахин оролдоно уу.'),
+        ),
       );
     }
   }
@@ -851,11 +873,9 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                   child: LayoutBuilder(
                     builder: (context, c) {
                       final dpr = MediaQuery.devicePixelRatioOf(context);
-                      final mw =
-                          (c.biggest.shortestSide * dpr * 2).round().clamp(
-                                480,
-                                2200,
-                              );
+                      final mw = (c.biggest.shortestSide * dpr * 2)
+                          .round()
+                          .clamp(480, 2200);
                       return CachedNetworkImage(
                         imageUrl: resolved,
                         fit: BoxFit.contain,
@@ -878,13 +898,13 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                         ),
                         errorWidget: (context, error, stackTrace) =>
                             const Padding(
-                          padding: EdgeInsets.all(24),
-                          child: Text(
-                            'Зураг ачааллах боломжгүй',
-                            style: TextStyle(color: Colors.white70),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
+                              padding: EdgeInsets.all(24),
+                              child: Text(
+                                'Зураг ачааллах боломжгүй',
+                                style: TextStyle(color: Colors.white70),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
                       );
                     },
                   ),
@@ -896,7 +916,10 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                   children: [
                     IconButton(
                       tooltip: 'Татах',
-                      icon: const Icon(Icons.download_rounded, color: Colors.white),
+                      icon: const Icon(
+                        Icons.download_rounded,
+                        color: Colors.white,
+                      ),
                       onPressed: () async {
                         await _saveAttachmentToDisk(resolved, 'image.jpg');
                       },
@@ -915,20 +938,25 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
     );
   }
 
-  Future<({RecordConfig config, String path})> _voiceRecordSetup(AudioRecorder recorder) async {
+  Future<({RecordConfig config, String path})> _voiceRecordSetup(
+    AudioRecorder recorder,
+  ) async {
     if (await recorder.isEncoderSupported(AudioEncoder.aacLc)) {
       final path = await _temporaryVoicePath('m4a');
-      return (config: const RecordConfig(encoder: AudioEncoder.aacLc), path: path);
+      return (
+        config: const RecordConfig(encoder: AudioEncoder.aacLc),
+        path: path,
+      );
     }
     if (await recorder.isEncoderSupported(AudioEncoder.wav)) {
       final path = await _temporaryVoicePath('wav');
-      return (config: const RecordConfig(encoder: AudioEncoder.wav), path: path);
+      return (
+        config: const RecordConfig(encoder: AudioEncoder.wav),
+        path: path,
+      );
     }
     final path = await _temporaryVoicePath('wav');
-    return (
-      config: const RecordConfig(encoder: AudioEncoder.wav),
-      path: path,
-    );
+    return (config: const RecordConfig(encoder: AudioEncoder.wav), path: path);
   }
 
   Future<String> _temporaryVoicePath(String extDot) async {
@@ -937,12 +965,13 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
     return '${dir.path}/clinova_voice_${DateTime.now().millisecondsSinceEpoch}.$extDot';
   }
 
-  AudioRecorder _recorderEnsure() =>
-      _voiceRecorder ??= AudioRecorder();
+  AudioRecorder _recorderEnsure() => _voiceRecorder ??= AudioRecorder();
 
   /// Press and hold mic: records while finger is down; on release uploads as [VOICE] (not text input).
   Future<void> _runVoiceHoldUntilRelease(Completer<void> released) async {
-    if (_patientUserId == null || activeRoomId.isEmpty || selectedDoctor == null) {
+    if (_patientUserId == null ||
+        activeRoomId.isEmpty ||
+        selectedDoctor == null) {
       return;
     }
     final otherParty = _doctorUserId(selectedDoctor!);
@@ -1054,21 +1083,27 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
     if (myId.isEmpty || activeRoomId.isEmpty || text.isEmpty) return;
     final doc = selectedDoctor;
     final receiver = doc != null ? _doctorUserId(doc) : null;
-    ref.read(realtimeServiceProvider).sendMessage(
-          activeRoomId,
-          myId,
-          text,
-          receiverId: receiver,
-        );
+    ref
+        .read(realtimeServiceProvider)
+        .sendMessage(activeRoomId, myId, text, receiverId: receiver);
     input.clear();
     ref.read(realtimeServiceProvider).sendTyping(activeRoomId, myId, false);
+  }
+
+  String _formatChatTimestamp(Map<String, dynamic> m) {
+    final raw = m['sentAt'] ?? m['createdAt'];
+    if (raw == null) return '';
+    final dt = DateTime.tryParse(raw.toString());
+    if (dt == null) return '';
+    return DateFormat('MMM d, HH:mm').format(dt.toLocal());
   }
 
   Widget _buildMessageContent(Map<String, dynamic> m, bool mine) {
     final type = (m['messageType']?.toString() ?? 'TEXT').toUpperCase();
     final textColor = mine ? Colors.white : Colors.black87;
     final text = m['text']?.toString() ?? '';
-    final attachmentUrl = _normalizeAttachmentUrl(m['attachmentUrl']?.toString()) ?? '';
+    final attachmentUrl =
+        _normalizeAttachmentUrl(m['attachmentUrl']?.toString()) ?? '';
     if (type == 'IMAGE' && attachmentUrl.isNotEmpty) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1160,7 +1195,9 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  type == 'VOICE' ? Icons.mic_rounded : Icons.attach_file_rounded,
+                  type == 'VOICE'
+                      ? Icons.mic_rounded
+                      : Icons.attach_file_rounded,
                   color: textColor,
                   size: 18,
                 ),
@@ -1217,14 +1254,19 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
     final initial = name.isNotEmpty
         ? String.fromCharCode(name.runes.first).toUpperCase()
         : '?';
+    final peerUser = peer['user'];
+    final userMap = peerUser is Map<String, dynamic>
+        ? peerUser
+        : (peerUser is Map ? Map<String, dynamic>.from(peerUser) : null);
     return ClinovaCircleAvatar(
       radius: radius,
       initialsText: initial,
       backgroundColor: Colors.white.withValues(alpha: 0.12),
       foregroundColor: Colors.white,
-      networkUrl: _doctorAvatarUrl(peer),
-      doctorPortraitFallback: !isDoctorSide,
+      networkUrl: isDoctorSide ? _doctorAvatarUrl(peer) : null,
+      doctorUseFlatAssetOnly: !isDoctorSide,
       doctorDisplayName: name,
+      doctorGender: isDoctorSide ? null : doctorGenderFromMap(userMap),
     );
   }
 
@@ -1274,7 +1316,8 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                     Text(
                       peerName.isNotEmpty ? peerName : 'Дуудлага',
                       textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(
                             color: Colors.white,
                             fontWeight: FontWeight.w700,
                           ),
@@ -1282,9 +1325,9 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                     const SizedBox(height: 8),
                     Text(
                       'Ирсэн дуудлага',
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: Colors.white70,
-                          ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodyLarge?.copyWith(color: Colors.white70),
                     ),
                     const Spacer(),
                     Row(
@@ -1302,9 +1345,7 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                             const SizedBox(height: 8),
                             Text(
                               'Татгалзах',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .labelMedium
+                              style: Theme.of(context).textTheme.labelMedium
                                   ?.copyWith(color: Colors.white70),
                             ),
                           ],
@@ -1321,9 +1362,7 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                             const SizedBox(height: 8),
                             Text(
                               'Хүлээн авах',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .labelMedium
+                              style: Theme.of(context).textTheme.labelMedium
                                   ?.copyWith(color: Colors.white70),
                             ),
                           ],
@@ -1357,8 +1396,8 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                             height: MediaQuery.sizeOf(context).height,
                             child: RTCVideoView(
                               rtc.localRenderer,
-                              objectFit:
-                                  RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                              objectFit: RTCVideoViewObjectFit
+                                  .RTCVideoViewObjectFitCover,
                             ),
                           ),
                         ),
@@ -1388,9 +1427,7 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                           Text(
                             peerName.isNotEmpty ? peerName : 'Эмч',
                             textAlign: TextAlign.center,
-                            style: Theme.of(context)
-                                .textTheme
-                                .headlineSmall
+                            style: Theme.of(context).textTheme.headlineSmall
                                 ?.copyWith(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w700,
@@ -1399,9 +1436,7 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                           const SizedBox(height: 8),
                           Text(
                             'Дуудлага…',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
+                            style: Theme.of(context).textTheme.titleMedium
                                 ?.copyWith(color: Colors.white60),
                           ),
                           const Spacer(),
@@ -1446,8 +1481,8 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                           child: RTCVideoView(
                             rtc.localRenderer,
                             mirror: true,
-                            objectFit:
-                                RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                            objectFit: RTCVideoViewObjectFit
+                                .RTCVideoViewObjectFitCover,
                           ),
                         ),
                       ),
@@ -1458,9 +1493,7 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                             padding: const EdgeInsets.only(top: 8),
                             child: Text(
                               peerName.isNotEmpty ? peerName : 'Дуудлага',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleMedium
+                              style: Theme.of(context).textTheme.titleMedium
                                   ?.copyWith(color: Colors.white70),
                             ),
                           ),
@@ -1491,9 +1524,7 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                           Text(
                             peerName.isNotEmpty ? peerName : 'Дуудлага',
                             textAlign: TextAlign.center,
-                            style: Theme.of(context)
-                                .textTheme
-                                .headlineSmall
+                            style: Theme.of(context).textTheme.headlineSmall
                                 ?.copyWith(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w700,
@@ -1501,9 +1532,7 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                           ),
                           Text(
                             'Дуудлагад',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
+                            style: Theme.of(context).textTheme.titleMedium
                                 ?.copyWith(color: Colors.white54),
                           ),
                           const Spacer(),
@@ -1622,15 +1651,17 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                             if (d['id'] != null)
                               DropdownMenuItem<String>(
                                 value: d['id'].toString(),
-                                child: Text(
-                                  () {
-                                    final key = _contactKeyForDoctor(d, isDoctorRole);
-                                    final unread = key == null ? 0 : (unreadByContact[key] ?? 0);
-                                    final badge = unread > 0 ? ' ($unread)' : '';
-                                    return '${_doctorDisplayName(d)} · ${_contactSubtitle(d, isDoctorRole, l10n.localeName)}$badge';
-                                  }(),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+                                child: Text(() {
+                                  final key = _contactKeyForDoctor(
+                                    d,
+                                    isDoctorRole,
+                                  );
+                                  final unread = key == null
+                                      ? 0
+                                      : (unreadByContact[key] ?? 0);
+                                  final badge = unread > 0 ? ' ($unread)' : '';
+                                  return '${_doctorDisplayName(d)} · ${_contactSubtitle(d, isDoctorRole, l10n.localeName)}$badge';
+                                }(), overflow: TextOverflow.ellipsis),
                               ),
                         ],
                         onChanged: (v) {
@@ -1659,36 +1690,65 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                     itemBuilder: (context, index) {
                       final m = messages[index];
                       final mine = m['senderId']?.toString() == myId;
+                      final ts = _formatChatTimestamp(m);
                       return Align(
                         alignment: mine
                             ? Alignment.centerRight
                             : Alignment.centerLeft,
-                        child: Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 11,
-                          ),
-                          constraints: const BoxConstraints(maxWidth: 280),
-                          decoration: BoxDecoration(
-                            color: mine
-                                ? const Color(0xFF1877F2)
-                                : Colors.white,
-                            borderRadius: BorderRadius.only(
-                              topLeft: const Radius.circular(18),
-                              topRight: const Radius.circular(18),
-                              bottomLeft: Radius.circular(mine ? 18 : 6),
-                              bottomRight: Radius.circular(mine ? 6 : 18),
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.06),
-                                blurRadius: 8,
-                                offset: const Offset(0, 3),
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Column(
+                            crossAxisAlignment: mine
+                                ? CrossAxisAlignment.end
+                                : CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 11,
+                                ),
+                                constraints: const BoxConstraints(
+                                  maxWidth: 280,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: mine
+                                      ? const Color(0xFF1877F2)
+                                      : Colors.white,
+                                  borderRadius: BorderRadius.only(
+                                    topLeft: const Radius.circular(18),
+                                    topRight: const Radius.circular(18),
+                                    bottomLeft: Radius.circular(mine ? 18 : 6),
+                                    bottomRight: Radius.circular(mine ? 6 : 18),
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.06,
+                                      ),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 3),
+                                    ),
+                                  ],
+                                ),
+                                child: _buildMessageContent(m, mine),
                               ),
+                              if (ts.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(
+                                    top: 4,
+                                    left: 6,
+                                    right: 6,
+                                  ),
+                                  child: Text(
+                                    ts,
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: cs.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
-                          child: _buildMessageContent(m, mine),
                         ),
                       );
                     },
@@ -1703,7 +1763,7 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'Typing...',
+                  'Бичиж байна…',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: cs.onSurfaceVariant,
                     fontStyle: FontStyle.italic,
@@ -1724,7 +1784,9 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                       child: Row(
                         children: [
                           OutlinedButton.icon(
-                            onPressed: _attachmentBusy ? null : _sendPickedImage,
+                            onPressed: _attachmentBusy
+                                ? null
+                                : _sendPickedImage,
                             icon: const Icon(Icons.image_outlined),
                             label: const Text('Photo'),
                           ),
@@ -1747,7 +1809,8 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                               _voiceFingerRelease = null;
                             },
                             child: Tooltip(
-                              message: 'Дарж барь — бичиж байна / сулласан — илгээнэ',
+                              message:
+                                  'Дарж барь — бичиж байна / сулласан — илгээнэ',
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 150),
                                 padding: const EdgeInsets.symmetric(
@@ -1756,11 +1819,15 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                                 ),
                                 decoration: BoxDecoration(
                                   border: Border.all(
-                                    color: _recordingVoiceHud ? Colors.red : cs.outline,
+                                    color: _recordingVoiceHud
+                                        ? Colors.red
+                                        : cs.outline,
                                   ),
                                   borderRadius: BorderRadius.circular(12),
                                   color: _recordingVoiceHud
-                                      ? cs.errorContainer.withValues(alpha: 0.35)
+                                      ? cs.errorContainer.withValues(
+                                          alpha: 0.35,
+                                        )
                                       : null,
                                 ),
                                 child: Row(
@@ -1886,16 +1953,55 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                 final initial = name.isNotEmpty
                     ? String.fromCharCode(name.runes.first).toUpperCase()
                     : '?';
-                return ClinovaCircleAvatar(
-                  radius: 16,
-                  initialsText: initial,
-                  backgroundColor: const Color(0xFFEAF2FF),
-                  foregroundColor: const Color(0xFF1D4ED8),
-                  networkUrl: selectedDoctor != null
-                      ? _doctorAvatarUrl(selectedDoctor!)
-                      : null,
-                  doctorPortraitFallback: !isDoctorRole,
-                  doctorDisplayName: name,
+                final peerUid = selectedDoctor != null
+                    ? _doctorUserId(selectedDoctor!)
+                    : null;
+                final peerOnline =
+                    peerUid != null &&
+                    peerUid.isNotEmpty &&
+                    ref.watch(onlineUserIdsProvider).contains(peerUid);
+                final selUser = selectedDoctor?['user'];
+                final selUserMap = selUser is Map<String, dynamic>
+                    ? selUser
+                    : (selUser is Map
+                          ? Map<String, dynamic>.from(selUser)
+                          : null);
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    ClinovaCircleAvatar(
+                      radius: 20,
+                      initialsText: initial,
+                      backgroundColor: isDoctorRole
+                          ? const Color(0xFFEAF2FF)
+                          : kClinovaFlatDoctorAvatarBackground,
+                      foregroundColor: isDoctorRole
+                          ? const Color(0xFF1D4ED8)
+                          : const Color(0xFF475569),
+                      networkUrl: isDoctorRole && selectedDoctor != null
+                          ? _doctorAvatarUrl(selectedDoctor!)
+                          : null,
+                      doctorUseFlatAssetOnly: !isDoctorRole,
+                      doctorDisplayName: name,
+                      doctorGender: !isDoctorRole
+                          ? doctorGenderFromMap(selUserMap)
+                          : null,
+                    ),
+                    if (peerOnline)
+                      Positioned(
+                        right: -0.5,
+                        bottom: -0.5,
+                        child: Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF22C55E),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 1.5),
+                          ),
+                        ),
+                      ),
+                  ],
                 );
               },
             ),
@@ -1954,10 +2060,7 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
       body: ClinovaBackdrop(
         child: Stack(
           clipBehavior: Clip.none,
-          children: [
-            body,
-            _buildCallOverlay(),
-          ],
+          children: [body, _buildCallOverlay()],
         ),
       ),
     );

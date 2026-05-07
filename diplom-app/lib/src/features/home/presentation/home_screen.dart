@@ -5,9 +5,9 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/localization/context_l10n.dart';
-import '../../../core/media/clinova_avatar_url.dart';
 import '../../../core/media/doctor_avatar_mapper.dart';
 import '../../../core/network/clinova_api.dart';
+import '../../../core/network/online_presence_provider.dart';
 import '../../../core/widgets/clinova_backdrop.dart';
 import '../../../core/widgets/clinova_circle_avatar.dart';
 import '../../../core/widgets/clinova_logo.dart';
@@ -39,8 +39,6 @@ String _appointmentDoctorName(Map<String, dynamic> ap) {
   if (u is! Map<String, dynamic>) return '';
   return _userFullName(u);
 }
-
-String? _absoluteUrl(String? raw) => clinovaAbsolutizeMediaUrl(raw);
 
 void _goAppointments(BuildContext context, Map<String, String?> queryMap) {
   final q = <String, String>{};
@@ -200,6 +198,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     final profileCompletion =
                         dashboard['profileCompletion']?.toString() ?? '0';
 
+                    final slotDoctorIds = slots
+                        .map((s) => s['doctorId']?.toString())
+                        .whereType<String>()
+                        .toSet();
+                    final onlineIds = ref.watch(onlineUserIdsProvider);
+
+                    final myDoctorsById = <String, Map<String, dynamic>>{};
+                    final myDoctorStatus = <String, String>{};
+                    if (isAuthed && user?.role == 'PATIENT') {
+                      final pastAp =
+                          (dashboard['appointmentHistory'] as List?)
+                              ?.cast<Map<String, dynamic>>() ??
+                          const <Map<String, dynamic>>[];
+                      for (final ap in [...upcomingAppointments, ...pastAp]) {
+                        final st = (ap['status'] ?? '')
+                            .toString()
+                            .toUpperCase();
+                        if (st == 'CANCELLED') continue;
+                        final doc = ap['doctor'];
+                        if (doc is! Map<String, dynamic>) continue;
+                        final did = doc['id']?.toString() ?? '';
+                        if (did.isEmpty) continue;
+                        myDoctorsById[did] = doc;
+                        myDoctorStatus[did] = ap['status']?.toString() ?? st;
+                      }
+                    }
+
                     return CustomScrollView(
                       primary: true,
                       slivers: [
@@ -315,12 +340,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                       ),
                                     if (isAuthed && user?.role == 'PATIENT')
                                       const SizedBox(height: 20),
+                                    if (isAuthed &&
+                                        user?.role == 'PATIENT' &&
+                                        myDoctorsById.isNotEmpty)
+                                      _MyDoctorsSection(
+                                        l10n: l10n,
+                                        theme: theme,
+                                        doctorsById: myDoctorsById,
+                                        statusById: myDoctorStatus,
+                                      ),
+                                    if (isAuthed &&
+                                        user?.role == 'PATIENT' &&
+                                        myDoctorsById.isNotEmpty)
+                                      const SizedBox(height: 20),
                                     RepaintBoundary(
                                       child: _StaffPreviewSection(
                                         key: _doctorsSectionKey,
                                         l10n: l10n,
                                         theme: theme,
                                         doctors: doctorsList,
+                                        onlineUserIds: onlineIds,
+                                        todayDoctorIds: slotDoctorIds,
                                       ),
                                     ),
                                     const SizedBox(height: 20),
@@ -664,17 +704,207 @@ class _PatientHealthSection extends StatelessWidget {
   }
 }
 
+class _MyDoctorsSection extends StatelessWidget {
+  const _MyDoctorsSection({
+    required this.l10n,
+    required this.theme,
+    required this.doctorsById,
+    required this.statusById,
+  });
+
+  final AppLocalizations l10n;
+  final ThemeData theme;
+  final Map<String, Map<String, dynamic>> doctorsById;
+  final Map<String, String> statusById;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = theme.colorScheme;
+    final entries = doctorsById.entries.toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.medical_information_outlined, color: cs.primary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Миний эмч нар',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Таны захиалсан үзлэгүүдийн эмч нар',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: cs.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 212,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: entries.length,
+            separatorBuilder: (context, _) => const SizedBox(width: 12),
+            itemBuilder: (context, i) {
+              final e = entries[i];
+              final docId = e.key;
+              final d = e.value;
+              final u = d['user'] as Map<String, dynamic>?;
+              final name = _userFullName(u);
+              final dept = d['department']?['name']?.toString() ?? '';
+              final initial = name.isNotEmpty
+                  ? String.fromCharCode(name.runes.first).toUpperCase()
+                  : '?';
+              final gender = doctorGenderFromMap(u);
+              final st = statusById[docId] ?? '—';
+              return Container(
+                width: 238,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.94),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.85),
+                  ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x100F172A),
+                      blurRadius: 14,
+                      offset: Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: InkWell(
+                            onTap: () => context.push('/doctor-profile/$docId'),
+                            borderRadius: BorderRadius.circular(16),
+                            child: Row(
+                              children: [
+                                _DoctorAvatar(
+                                  doctorName: name,
+                                  initial: initial,
+                                  gender: gender,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        name.isEmpty ? '—' : name,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: theme.textTheme.titleSmall
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                      ),
+                                      if (dept.isNotEmpty)
+                                        Text(
+                                          dept,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                                color: cs.onSurfaceVariant,
+                                              ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: cs.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        st,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: cs.primary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () =>
+                                context.push('/doctor-profile/$docId'),
+                            icon: const Icon(
+                              Icons.person_outline_rounded,
+                              size: 18,
+                            ),
+                            label: const Text('Профайл'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: () => context.push(
+                              '/doctor-chat?doctorId=${Uri.encodeComponent(docId)}',
+                            ),
+                            icon: const Icon(
+                              Icons.chat_bubble_outline_rounded,
+                              size: 18,
+                            ),
+                            label: const Text('Чат'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _StaffPreviewSection extends StatelessWidget {
   const _StaffPreviewSection({
     super.key,
     required this.l10n,
     required this.theme,
     required this.doctors,
+    required this.onlineUserIds,
+    required this.todayDoctorIds,
   });
 
   final AppLocalizations l10n;
   final ThemeData theme;
   final List<Map<String, dynamic>> doctors;
+  final Set<String> onlineUserIds;
+  final Set<String> todayDoctorIds;
 
   @override
   Widget build(BuildContext context) {
@@ -732,48 +962,48 @@ class _StaffPreviewSection extends StatelessWidget {
           child: RepaintBoundary(
             child: Stack(
               children: [
-              AspectRatio(
-                aspectRatio: 16 / 9,
-                child: Image.asset(
-                  'assets/images/clinova_team_card.jpg',
-                  fit: BoxFit.cover,
-                  alignment: Alignment.topCenter,
-                  cacheWidth: 1000,
-                  cacheHeight: 562,
-                  gaplessPlayback: true,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    color: const Color(0xFF0D3B66),
-                    alignment: Alignment.center,
-                    child: Icon(
-                      Icons.groups_rounded,
-                      size: 64,
-                      color: Colors.white.withValues(alpha: 0.9),
+                AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: Image.asset(
+                    'assets/images/clinova_team_card.jpg',
+                    fit: BoxFit.cover,
+                    alignment: Alignment.topCenter,
+                    cacheWidth: 1000,
+                    cacheHeight: 562,
+                    gaplessPlayback: true,
+                    errorBuilder: (context, error, stackTrace) => Container(
+                      color: const Color(0xFF0D3B66),
+                      alignment: Alignment.center,
+                      child: Icon(
+                        Icons.groups_rounded,
+                        size: 64,
+                        color: Colors.white.withValues(alpha: 0.9),
+                      ),
                     ),
                   ),
                 ),
-              ),
-              Positioned(
-                left: 12,
-                bottom: 12,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xCC071B4D),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    'Манай эмнэлгийн хамт олон',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
+                Positioned(
+                  left: 12,
+                  bottom: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xCC071B4D),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      'Манай эмнэлгийн хамт олон',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
             ),
           ),
         ),
@@ -786,71 +1016,172 @@ class _StaffPreviewSection extends StatelessWidget {
             separatorBuilder: (context, i) => const SizedBox(width: 12),
             itemBuilder: (context, i) {
               final d = preview[i];
+              final docId = d['id']?.toString() ?? '';
               final u = d['user'] as Map<String, dynamic>?;
+              final userId = u?['id']?.toString() ?? '';
               final name = _userFullName(u);
               final dept = d['department']?['name']?.toString() ?? '';
               final branch = d['branch']?['name']?.toString() ?? '';
-              final avatarUrl = _absoluteUrl(
-                u?['avatarUrl']?.toString() ?? d['avatarUrl']?.toString(),
-              );
               final initial = name.isNotEmpty
                   ? String.fromCharCode(name.runes.first).toUpperCase()
                   : '?';
-              return Container(
-                width: 220,
-                padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.92),
+              final gender = doctorGenderFromMap(u);
+              final isOnline =
+                  userId.isNotEmpty && onlineUserIds.contains(userId);
+              final hasSlotToday =
+                  docId.isNotEmpty && todayDoctorIds.contains(docId);
+              final ratingVal = d['avgRating'] ?? d['rating'];
+              final ratingText = ratingVal is num
+                  ? ratingVal.toStringAsFixed(1)
+                  : '4.8';
+              return Material(
+                color: Colors.transparent,
+                child: InkWell(
                   borderRadius: BorderRadius.circular(24),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.85),
+                  onTap: docId.isEmpty
+                      ? null
+                      : () => context.push('/doctor-profile/$docId'),
+                  child: Container(
+                    width: 220,
+                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.85),
+                      ),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x100F172A),
+                          blurRadius: 14,
+                          offset: Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                _DoctorAvatar(
+                                  doctorName: name,
+                                  initial: initial,
+                                  gender: gender,
+                                ),
+                                if (isOnline)
+                                  Positioned(
+                                    right: 0,
+                                    bottom: 0,
+                                    child: Container(
+                                      width: 14,
+                                      height: 14,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF22C55E),
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: Colors.white,
+                                          width: 2,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (hasSlotToday)
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 4),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 3,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFDCFCE7),
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                        ),
+                                        child: const Text(
+                                          'Өнөөдөр',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w800,
+                                            color: Color(0xFF166534),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  Text(
+                                    '★ $ratingText',
+                                    style: theme.textTheme.labelMedium
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w700,
+                                          color: const Color(0xFFF59E0B),
+                                        ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                minWidth: 36,
+                                minHeight: 36,
+                              ),
+                              tooltip: 'Чат',
+                              onPressed: docId.isEmpty
+                                  ? null
+                                  : () => context.push(
+                                      '/doctor-chat?doctorId=${Uri.encodeComponent(docId)}',
+                                    ),
+                              icon: Icon(
+                                Icons.chat_bubble_outline_rounded,
+                                color: cs.primary,
+                                size: 22,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          name.isEmpty ? '—' : name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        if (dept.isNotEmpty)
+                          Text(
+                            dept,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ),
+                        if (branch.isNotEmpty)
+                          Text(
+                            branch,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x100F172A),
-                      blurRadius: 14,
-                      offset: Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _DoctorAvatar(
-                      avatarUrl: avatarUrl,
-                      doctorName: name,
-                      initial: initial,
-                      backgroundColor: cs.primaryContainer,
-                      textColor: cs.onPrimaryContainer,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      name.isEmpty ? '—' : name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    if (dept.isNotEmpty)
-                      Text(
-                        dept,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: cs.onSurfaceVariant,
-                        ),
-                      ),
-                    if (branch.isNotEmpty)
-                      Text(
-                        branch,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: cs.onSurfaceVariant,
-                        ),
-                      ),
-                  ],
                 ),
               );
             },
@@ -863,29 +1194,25 @@ class _StaffPreviewSection extends StatelessWidget {
 
 class _DoctorAvatar extends StatelessWidget {
   const _DoctorAvatar({
-    required this.avatarUrl,
     required this.doctorName,
     required this.initial,
-    required this.backgroundColor,
-    required this.textColor,
+    this.gender,
   });
 
-  final String? avatarUrl;
   final String doctorName;
   final String initial;
-  final Color backgroundColor;
-  final Color textColor;
+  final String? gender;
 
   @override
   Widget build(BuildContext context) {
     return ClinovaCircleAvatar(
-      radius: 26,
+      radius: kClinovaDoctorListAvatarRadius,
       initialsText: initial,
-      backgroundColor: backgroundColor,
-      foregroundColor: textColor,
-      networkUrl: avatarUrl,
-      doctorPortraitFallback: true,
+      backgroundColor: kClinovaFlatDoctorAvatarBackground,
+      foregroundColor: const Color(0xFF475569),
+      doctorUseFlatAssetOnly: true,
       doctorDisplayName: doctorName.isEmpty ? initial : doctorName,
+      doctorGender: gender,
     );
   }
 }
@@ -1492,30 +1819,15 @@ class _AvailabilityCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ClipOval(
-            child: SizedBox(
-              width: 56,
-              height: 56,
-              child: Image.asset(
-                resolveDoctorAvatar(doctorName: doctor),
-                fit: BoxFit.cover,
-                cacheWidth:
-                    (56 * MediaQuery.devicePixelRatioOf(context)).ceil().clamp(
-                          112,
-                          320,
-                        ),
-                cacheHeight:
-                    (56 * MediaQuery.devicePixelRatioOf(context)).ceil().clamp(
-                          112,
-                          320,
-                        ),
-                gaplessPlayback: true,
-                errorBuilder: (context, error, stackTrace) => ColoredBox(
-                  color: accent.withValues(alpha: 0.12),
-                  child: Icon(Icons.person_rounded, color: accent, size: 28),
-                ),
-              ),
-            ),
+          ClinovaCircleAvatar(
+            radius: 28,
+            initialsText: doctor.isNotEmpty
+                ? String.fromCharCode(doctor.runes.first).toUpperCase()
+                : '?',
+            backgroundColor: kClinovaFlatDoctorAvatarBackground,
+            foregroundColor: const Color(0xFF475569),
+            doctorUseFlatAssetOnly: true,
+            doctorDisplayName: doctor,
           ),
           const SizedBox(width: 16),
           Expanded(

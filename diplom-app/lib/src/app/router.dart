@@ -19,6 +19,7 @@ import '../features/chat/presentation/doctor_chat_screen.dart';
 import '../features/doctor/presentation/doctor_dashboard_screen.dart';
 import '../features/doctor/presentation/doctor_notes_screen.dart';
 import '../features/doctor/presentation/doctor_schedule_screen.dart';
+import '../features/doctor/presentation/doctor_public_profile_screen.dart';
 import '../features/emergency/presentation/emergency_screen.dart';
 import '../features/branches/presentation/branches_screen.dart';
 import '../features/home/presentation/home_screen.dart';
@@ -76,7 +77,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             location == '/emergency' ||
             location == '/agent' ||
             location == '/profile' ||
-            location.startsWith('/profile/');
+            location.startsWith('/profile/') ||
+            location.startsWith('/doctor-profile/');
       case 'DOCTOR':
         return location == '/doctor' ||
             location == '/doctor/schedule' ||
@@ -90,7 +92,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             location == '/branches' ||
             location == '/emergency' ||
             location == '/profile' ||
-            location.startsWith('/profile/');
+            location.startsWith('/profile/') ||
+            location.startsWith('/doctor-profile/');
       case 'PATIENT':
       default:
         return location == '/home' ||
@@ -104,7 +107,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             location == '/settings' ||
             location == '/doctor-chat' ||
             location == '/profile' ||
-            location.startsWith('/profile/');
+            location.startsWith('/profile/') ||
+            location.startsWith('/doctor-profile/');
     }
   }
 
@@ -117,6 +121,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     if (location == '/branches') return true;
     if (location == '/agent') return true;
     if (location == '/emergency') return true;
+    if (location.startsWith('/doctor-profile/')) return true;
     return false;
   }
 
@@ -203,6 +208,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/chat-landing',
         builder: (context, state) => const DoctorChatLandingScreen(),
+      ),
+      GoRoute(
+        path: '/doctor-profile/:doctorId',
+        builder: (context, state) => DoctorPublicProfileScreen(
+          doctorProfileId: state.pathParameters['doctorId']!,
+        ),
       ),
       ShellRoute(
         builder: (context, state, child) => PatientShell(child: child),

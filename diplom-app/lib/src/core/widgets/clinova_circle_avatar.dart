@@ -6,11 +6,20 @@ import 'package:flutter/material.dart';
 import '../media/clinova_avatar_url.dart';
 import '../media/doctor_avatar_mapper.dart';
 
+/// Neutral fill behind flat doctor illustrations (matches list cards).
+const Color kClinovaFlatDoctorAvatarBackground = Color(0xFFE8EDF4);
+
+/// Default radius for doctor list/card rows (home, directory strips).
+const double kClinovaDoctorListAvatarRadius = 26;
+
 /// Circle avatar with safe network/memory image loading; falls back to [initialsText]
 /// on load error, invalid URL, or missing image (avoids [NetworkImage] throwing on web).
 ///
 /// When [doctorPortraitFallback] is true, bundled flat doctor art is used instead of
 /// initials (for network failure, missing URL, and loading placeholder on doctors).
+///
+/// When [doctorUseFlatAssetOnly] is true, only [kDoctorMaleAsset] / [kDoctorFemaleAsset]
+/// are shown ([networkUrl] and legacy bundled paths are ignored).
 class ClinovaCircleAvatar extends StatelessWidget {
   const ClinovaCircleAvatar({
     super.key,
@@ -21,6 +30,7 @@ class ClinovaCircleAvatar extends StatelessWidget {
     this.networkUrl,
     this.memoryBytes,
     this.doctorPortraitFallback = false,
+    this.doctorUseFlatAssetOnly = false,
     this.doctorDisplayName,
     this.doctorGender,
   });
@@ -32,6 +42,9 @@ class ClinovaCircleAvatar extends StatelessWidget {
   final String? networkUrl;
   final Uint8List? memoryBytes;
   final bool doctorPortraitFallback;
+
+  /// Doctor UI (cards, chat as seen by patient): never show real uploaded photos.
+  final bool doctorUseFlatAssetOnly;
   final String? doctorDisplayName;
   final String? doctorGender;
 
@@ -106,12 +119,25 @@ class ClinovaCircleAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final d = radius * 2;
+
+    if (doctorUseFlatAssetOnly) {
+      return SizedBox(
+        width: d,
+        height: d,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            shape: BoxShape.circle,
+          ),
+          child: ClipOval(child: _doctorFallback(context)),
+        ),
+      );
+    }
+
     final mem = memoryBytes;
     final hasMem = mem != null && mem.isNotEmpty;
     final trimmed = networkUrl?.trim();
-    final bundledPath = !hasMem &&
-            trimmed != null &&
-            trimmed.isNotEmpty
+    final bundledPath = !hasMem && trimmed != null && trimmed.isNotEmpty
         ? clinovaBundledAvatarAssetPath(trimmed)
         : null;
     String? netUrl;

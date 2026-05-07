@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -95,8 +97,15 @@ Future<void> _showFullscreenMemoryImage(BuildContext context, Uint8List bytes) {
 
 final _premiumQuickChips = <String, String>{
   'Толгой өвдөөд халуурч байна': 'Толгой өвдөөд халуурч байна',
-  'Арьсан дээр тууралт гарсан': 'Арьсан дээр тууралт гарсан',
+  'Толгой маш өвдөж (латин)': 'tolgoi aimar uwduud bn',
+  'Халуураад байна': 'haluurad bna',
+  'Зураг үзнэ үү?': 'zurag harsan uu',
+  'Арьсан дээр тууралт': 'Арьсан дээр тууралт гарсан',
   'Ямар эмч дээр очих вэ?': 'Ямар эмч дээр очих вэ?',
+  'Маргааш цаг аваад өг': 'Маргааш арьсны эмч дээр цаг аваад өг',
+  'Эмчтэй чат нээ': 'Эмчтэй чат нээгээд өг',
+  'Миний цаг': 'Миний захиалсан цагуудыг харуул',
+  'Профайл нээ': 'Миний профайлыг нээ',
   'Цаг захиалмаар байна': 'Цаг захиалмаар байна',
   'Яаралтай тусламж': 'Цээж маш хүчтэй өвдөж, амьсгал давчдаж байна.',
 };
@@ -220,6 +229,13 @@ const _knownAgentRoutes = <String>{
   '/agent',
 };
 
+bool _isAllowedAgentPath(String path) {
+  if (path.startsWith('emergency:')) return true;
+  if (_knownAgentRoutes.contains(path)) return true;
+  if (path.startsWith('/doctor-profile/')) return true;
+  return false;
+}
+
 String _fallbackRouteForActionType(String actionType) {
   switch (actionType) {
     case 'BOOK_APPOINTMENT':
@@ -236,6 +252,73 @@ String _fallbackRouteForActionType(String actionType) {
       return '/chat-landing';
     default:
       return '/agent';
+  }
+}
+
+/// Word-chunk reveal + markdown (premium feel; response is already complete from API).
+class _RevealingAgentMarkdown extends StatefulWidget {
+  const _RevealingAgentMarkdown({required this.data});
+
+  final String data;
+
+  @override
+  State<_RevealingAgentMarkdown> createState() => _RevealingAgentMarkdownState();
+}
+
+class _RevealingAgentMarkdownState extends State<_RevealingAgentMarkdown> {
+  String _visible = '';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_animate()));
+  }
+
+  @override
+  void didUpdateWidget(covariant _RevealingAgentMarkdown oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.data != widget.data) {
+      _visible = '';
+      unawaited(_animate());
+    }
+  }
+
+  Future<void> _animate() async {
+    final t = widget.data;
+    if (t.isEmpty) return;
+    const step = 18;
+    for (var i = 0; i <= t.length; i += step) {
+      if (!mounted) return;
+      final end = i > t.length ? t.length : i;
+      setState(() => _visible = t.substring(0, end));
+      await Future<void>.delayed(const Duration(milliseconds: 12));
+    }
+    if (mounted) setState(() => _visible = t);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final sheet = MarkdownStyleSheet.fromTheme(theme).copyWith(
+      p: theme.textTheme.bodyMedium?.copyWith(
+        color: const Color(0xFF334155),
+        height: 1.45,
+      ),
+      strong: theme.textTheme.bodyMedium?.copyWith(
+        color: const Color(0xFF0F172A),
+        fontWeight: FontWeight.w800,
+        height: 1.45,
+      ),
+      listBullet: theme.textTheme.bodyMedium?.copyWith(
+        color: const Color(0xFF334155),
+      ),
+    );
+    return MarkdownBody(
+      data: _visible,
+      styleSheet: sheet,
+      shrinkWrap: true,
+      selectable: true,
+    );
   }
 }
 
@@ -706,9 +789,9 @@ class _AiAgentScreenState extends ConsumerState<AiAgentScreen> {
     }
     if (!mounted) return;
 
-    if (!_knownAgentRoutes.contains(path)) {
+    if (!_isAllowedAgentPath(path)) {
       final fallback = _fallbackRouteForActionType(actionType);
-      if (fallback.isNotEmpty && _knownAgentRoutes.contains(fallback)) {
+      if (fallback.isNotEmpty && _isAllowedAgentPath(fallback)) {
         context.push(fallback);
       }
       return;
@@ -1459,13 +1542,7 @@ class _AgentCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 10),
-            Text(
-              answer.replaceAll('**', ''),
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: const Color(0xFF334155),
-                height: 1.45,
-              ),
-            ),
+            _RevealingAgentMarkdown(data: answer),
             if (showImageDisclaimer) ...[
               const SizedBox(height: 10),
               Container(
@@ -1608,6 +1685,66 @@ class _AgentCard extends StatelessWidget {
                             'Цаг: ${_humanDateTime(slot)}',
                             style: theme.textTheme.labelSmall,
                           ),
+                        if ((d['id']?.toString() ?? '').isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: [
+                              TextButton(
+                                onPressed: () => unawaited(onAction({
+                                  'type': 'OPEN_DOCTOR_PROFILE',
+                                  'route':
+                                      '/doctor-profile/${d['id']}',
+                                  'params': <String, dynamic>{},
+                                  'payload': {
+                                    'route':
+                                        '/doctor-profile/${d['id']}',
+                                    'params': <String, dynamic>{},
+                                  },
+                                })),
+                                child: const Text('Профайл'),
+                              ),
+                              TextButton(
+                                onPressed: () => unawaited(onAction({
+                                  'type': 'OPEN_DOCTOR_CHAT',
+                                  'route': '/doctor-chat',
+                                  'params': {
+                                    'doctorId': d['id'].toString(),
+                                  },
+                                  'payload': {
+                                    'route': '/doctor-chat',
+                                    'params': {
+                                      'doctorId': d['id'].toString(),
+                                    },
+                                  },
+                                })),
+                                child: const Text('Чат'),
+                              ),
+                              TextButton(
+                                onPressed: () {
+                                  final serviceId =
+                                      d['serviceId']?.toString() ?? '';
+                                  final qp = <String, String>{
+                                    'doctorId': d['id'].toString(),
+                                    if (serviceId.isNotEmpty)
+                                      'serviceId': serviceId,
+                                  };
+                                  unawaited(onAction({
+                                    'type': 'BOOK_APPOINTMENT',
+                                    'route': '/appointments/book',
+                                    'params': qp,
+                                    'payload': {
+                                      'route': '/appointments/book',
+                                      'params': qp,
+                                    },
+                                  }));
+                                },
+                                child: const Text('Цаг авах'),
+                              ),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ),

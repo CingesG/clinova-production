@@ -61,7 +61,7 @@ function avatarFor(userKey: string): string {
   return `https://api.dicebear.com/7.x/identicon/svg?seed=${enc}`;
 }
 
-/** Bundled Flutter asset path (resolved client-side); not an HTTP URL. */
+/** Bundled Flutter asset path for flat illustrations (`flutter-asset:` prefix). */
 function demoDoctorSeedAvatar(gender: 'male' | 'female'): string {
   return gender === 'female'
     ? 'flutter-asset:assets/images/avatars/doctor_female.png'
