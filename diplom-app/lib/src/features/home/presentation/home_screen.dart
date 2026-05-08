@@ -289,6 +289,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
   }
 
+  void _reloadHomeBootstrap() {
+    if (!mounted) return;
+    setState(() {
+      _homeBootstrapFuture = null;
+      _homeBootstrapCacheKey = null;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -343,6 +351,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     role: user?.role,
                   ),
                   builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text(
+                                'Нүүр хуудас ачааллахад алдаа гарлаа.',
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 12),
+                              FilledButton(
+                                onPressed: _reloadHomeBootstrap,
+                                child: Text(l10n.branchesRetry),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
                     final dashboard =
                         snapshot.hasData && snapshot.data!.isNotEmpty
                         ? snapshot.data![0] as Map<String, dynamic>

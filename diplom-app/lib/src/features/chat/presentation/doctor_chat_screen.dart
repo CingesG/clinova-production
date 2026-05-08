@@ -1744,38 +1744,205 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
         : l10n.chatSelectDoctor;
     final myId = _patientUserId ?? '';
 
-    Widget body;
-    if (loadingDoctors) {
-      body = const Center(child: CircularProgressIndicator());
-    } else if (loadError != null) {
-      body = Center(
+    final selectedId = selectedDoctor?['id']?.toString();
+    final selectedInList =
+        selectedId != null && doctors.any((d) => d['id']?.toString() == selectedId);
+
+    Widget messagePane() {
+      if (loadingMessages) return const Center(child: CircularProgressIndicator());
+      if (messages.isEmpty) {
+        return Center(
+          child: Text(
+            'Одоогоор чат эхлээгүй байна',
+            style: theme.textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+          ),
+        );
+      }
+      return ListView.builder(
+        controller: scroll,
+        padding: const EdgeInsets.all(16),
+        itemCount: messages.length,
+        itemBuilder: (context, index) {
+          final m = messages[index];
+          final mine = m['senderId']?.toString() == myId;
+          final ts = _formatChatTimestamp(m);
+          return Align(
+            alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Column(
+                crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                    constraints: const BoxConstraints(maxWidth: 280),
+                    decoration: BoxDecoration(
+                      color: mine ? const Color(0xFF1877F2) : Colors.white,
+                      borderRadius: BorderRadius.only(
+                        topLeft: const Radius.circular(18),
+                        topRight: const Radius.circular(18),
+                        bottomLeft: Radius.circular(mine ? 18 : 6),
+                        bottomRight: Radius.circular(mine ? 6 : 18),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.06),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: _buildMessageContent(m, mine),
+                  ),
+                  if (ts.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4, left: 6, right: 6),
+                      child: Text(
+                        ts,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    }
+
+    Widget composerPane() {
+      return SafeArea(
+        top: false,
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(loadError!, textAlign: TextAlign.center),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: _loadDoctors,
-                child: Text(l10n.branchesRetry),
+              if (activeRoomId.isNotEmpty && isAuthed)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _attachmentBusy ? null : _sendPickedImage,
+                        icon: const Icon(Icons.image_outlined),
+                        label: const Text('Photo'),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        onPressed: _attachmentBusy ? null : _sendPickedFile,
+                        icon: const Icon(Icons.attach_file_rounded),
+                        label: const Text('File'),
+                      ),
+                      const SizedBox(width: 8),
+                      Listener(
+                        behavior: HitTestBehavior.opaque,
+                        onPointerDown: (_) => _voicePointerDown(),
+                        onPointerUp: (_) {
+                          _voicePointerEnd();
+                          _voiceFingerRelease = null;
+                        },
+                        onPointerCancel: (_) {
+                          _voicePointerEnd();
+                          _voiceFingerRelease = null;
+                        },
+                        child: Tooltip(
+                          message: 'Дарж барь — бичиж байна / сулласан — илгээнэ',
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: _recordingVoiceHud ? Colors.red : cs.outline,
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                              color: _recordingVoiceHud
+                                  ? cs.errorContainer.withValues(alpha: 0.35)
+                                  : null,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.mic_rounded,
+                                  size: 18,
+                                  color: _recordingVoiceHud ? cs.error : cs.onSurfaceVariant,
+                                ),
+                                const SizedBox(width: 6),
+                                Text('Дуу', style: theme.textTheme.labelLarge),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: input,
+                      enabled: isAuthed && activeRoomId.isNotEmpty,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      maxLines: 1,
+                      textInputAction: TextInputAction.send,
+                      keyboardType: TextInputType.text,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.deny(RegExp(r'[\n\r]')),
+                      ],
+                      onSubmitted: (_) => _sendCurrentMessage(),
+                      onChanged: (value) {
+                        if (_patientUserId == null || activeRoomId.isEmpty) return;
+                        ref.read(realtimeServiceProvider).sendTyping(
+                              activeRoomId,
+                              _patientUserId!,
+                              value.trim().isNotEmpty,
+                            );
+                        _typingDebounce?.cancel();
+                        _typingDebounce = Timer(const Duration(milliseconds: 900), () {
+                          if (!mounted || _patientUserId == null || activeRoomId.isEmpty) return;
+                          ref.read(realtimeServiceProvider).sendTyping(
+                                activeRoomId,
+                                _patientUserId!,
+                                false,
+                              );
+                        });
+                      },
+                      decoration: InputDecoration(
+                        hintText: l10n.chatWriteMessageHint,
+                        filled: true,
+                        border: const OutlineInputBorder(
+                          borderSide: BorderSide.none,
+                          borderRadius: BorderRadius.all(Radius.circular(14)),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: !isAuthed || activeRoomId.isEmpty ? null : _sendCurrentMessage,
+                    child: const Icon(Icons.send),
+                  ),
+                ],
               ),
             ],
           ),
         ),
       );
-    } else if (doctors.isEmpty && lockedOutDoctor == null) {
-      body = Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(noDoctorsLabel, textAlign: TextAlign.center),
-        ),
-      );
-    } else {
-      body = Column(
+    }
+
+    Widget chatColumn({bool showDropdown = true}) {
+      return Column(
         children: [
-          if (lockedOutDoctor != null)
-            _buildLockedOutDoctorPanel(theme, cs),
+          if (lockedOutDoctor != null) _buildLockedOutDoctorPanel(theme, cs),
           if (!isAuthed)
             Material(
               color: cs.primaryContainer.withValues(alpha: 0.55),
@@ -1799,139 +1966,47 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                 ),
               ),
             ),
-          if (doctors.isNotEmpty)
+          if (showDropdown && doctors.isNotEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    selectLabel,
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
+              child: Material(
+                color: Colors.white.withValues(alpha: 0.92),
+                borderRadius: BorderRadius.circular(16),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      isExpanded: true,
+                      value: selectedInList ? selectedId : null,
+                      borderRadius: BorderRadius.circular(16),
+                      hint: Text(selectLabel),
+                      items: [
+                        for (final d in doctors)
+                          if (d['id'] != null)
+                            DropdownMenuItem<String>(
+                              value: d['id'].toString(),
+                              child: Text(
+                                _doctorDisplayName(d),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                      ],
+                      onChanged: (v) {
+                        if (v == null) return;
+                        setState(() => lockedOutDoctor = null);
+                        for (final d in doctors) {
+                          if (d['id']?.toString() == v) {
+                            _selectDoctor(d);
+                            break;
+                          }
+                        }
+                      },
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Material(
-                    color: Colors.white.withValues(alpha: 0.92),
-                    borderRadius: BorderRadius.circular(16),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          isExpanded: true,
-                          value: selectedDoctor?['id']?.toString(),
-                          borderRadius: BorderRadius.circular(16),
-                          items: [
-                            for (final d in doctors)
-                              if (d['id'] != null)
-                                DropdownMenuItem<String>(
-                                  value: d['id'].toString(),
-                                  child: Text(() {
-                                    final key = _contactKeyForDoctor(
-                                      d,
-                                      isDoctorRole,
-                                    );
-                                    final unread = key == null
-                                        ? 0
-                                        : (unreadByContact[key] ?? 0);
-                                    final badge =
-                                        unread > 0 ? ' ($unread)' : '';
-                                    return '${_doctorDisplayName(d)} · ${_contactSubtitle(d, isDoctorRole, l10n.localeName)}$badge';
-                                  }(), overflow: TextOverflow.ellipsis),
-                                ),
-                          ],
-                          onChanged: (v) {
-                            if (v == null) return;
-                            setState(() => lockedOutDoctor = null);
-                            for (final d in doctors) {
-                              if (d['id']?.toString() == v) {
-                                _selectDoctor(d);
-                                break;
-                              }
-                            }
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
-          Expanded(
-            child: loadingMessages
-                ? const Center(child: CircularProgressIndicator())
-                : ListView.builder(
-                    controller: scroll,
-                    padding: const EdgeInsets.all(16),
-                    itemCount: messages.length,
-                    itemBuilder: (context, index) {
-                      final m = messages[index];
-                      final mine = m['senderId']?.toString() == myId;
-                      final ts = _formatChatTimestamp(m);
-                      return Align(
-                        alignment: mine
-                            ? Alignment.centerRight
-                            : Alignment.centerLeft,
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: Column(
-                            crossAxisAlignment: mine
-                                ? CrossAxisAlignment.end
-                                : CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 11,
-                                ),
-                                constraints: const BoxConstraints(
-                                  maxWidth: 280,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: mine
-                                      ? const Color(0xFF1877F2)
-                                      : Colors.white,
-                                  borderRadius: BorderRadius.only(
-                                    topLeft: const Radius.circular(18),
-                                    topRight: const Radius.circular(18),
-                                    bottomLeft: Radius.circular(mine ? 18 : 6),
-                                    bottomRight: Radius.circular(mine ? 6 : 18),
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withValues(
-                                        alpha: 0.06,
-                                      ),
-                                      blurRadius: 8,
-                                      offset: const Offset(0, 3),
-                                    ),
-                                  ],
-                                ),
-                                child: _buildMessageContent(m, mine),
-                              ),
-                              if (ts.isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(
-                                    top: 4,
-                                    left: 6,
-                                    right: 6,
-                                  ),
-                                  child: Text(
-                                    ts,
-                                    style: theme.textTheme.labelSmall?.copyWith(
-                                      color: cs.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-          ),
+          Expanded(child: messagePane()),
           if (typingUserId != null &&
               typingUserId!.isNotEmpty &&
               typingUserId != myId &&
@@ -1949,160 +2024,136 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                 ),
               ),
             ),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+          composerPane(),
+        ],
+      );
+    }
+
+    Widget body;
+    if (loadingDoctors) {
+      body = const Center(child: CircularProgressIndicator());
+    } else if (loadError != null) {
+      body = Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(loadError!, textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              FilledButton(onPressed: _loadDoctors, child: Text(l10n.branchesRetry)),
+            ],
+          ),
+        ),
+      );
+    } else if (doctors.isEmpty && lockedOutDoctor == null) {
+      body = Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(noDoctorsLabel, textAlign: TextAlign.center),
+        ),
+      );
+    } else {
+      body = LayoutBuilder(
+        builder: (context, constraints) {
+          if (!constraints.hasBoundedWidth || constraints.maxWidth <= 0) {
+            return const Center(
+              child: Text('Чат харагдахад асуудал гарлаа. Дахин оролдоно уу.'),
+            );
+          }
+          final useDesktopRow = constraints.maxWidth > 900 && constraints.maxWidth.isFinite;
+          if (!useDesktopRow) return chatColumn(showDropdown: true);
+
+          return Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1280),
+              child: Row(
                 children: [
-                  if (activeRoomId.isNotEmpty && isAuthed)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Row(
-                        children: [
-                          OutlinedButton.icon(
-                            onPressed: _attachmentBusy
-                                ? null
-                                : _sendPickedImage,
-                            icon: const Icon(Icons.image_outlined),
-                            label: const Text('Photo'),
-                          ),
-                          const SizedBox(width: 8),
-                          OutlinedButton.icon(
-                            onPressed: _attachmentBusy ? null : _sendPickedFile,
-                            icon: const Icon(Icons.attach_file_rounded),
-                            label: const Text('File'),
-                          ),
-                          const SizedBox(width: 8),
-                          Listener(
-                            behavior: HitTestBehavior.opaque,
-                            onPointerDown: (_) => _voicePointerDown(),
-                            onPointerUp: (_) {
-                              _voicePointerEnd();
-                              _voiceFingerRelease = null;
-                            },
-                            onPointerCancel: (_) {
-                              _voicePointerEnd();
-                              _voiceFingerRelease = null;
-                            },
-                            child: Tooltip(
-                              message:
-                                  'Дарж барь — бичиж байна / сулласан — илгээнэ',
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 150),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 10,
-                                ),
-                                decoration: BoxDecoration(
-                                  border: Border.all(
-                                    color: _recordingVoiceHud
-                                        ? Colors.red
-                                        : cs.outline,
-                                  ),
-                                  borderRadius: BorderRadius.circular(12),
-                                  color: _recordingVoiceHud
-                                      ? cs.errorContainer.withValues(
-                                          alpha: 0.35,
-                                        )
-                                      : null,
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.mic_rounded,
-                                      size: 18,
-                                      color: _recordingVoiceHud
-                                          ? cs.error
-                                          : cs.onSurfaceVariant,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      'Дуу',
-                                      style: theme.textTheme.labelLarge,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                  Container(
+                    width: 340,
+                    margin: const EdgeInsets.fromLTRB(12, 12, 8, 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
                     ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: input,
-                          enabled: isAuthed && activeRoomId.isNotEmpty,
-                          autocorrect: false,
-                          enableSuggestions: false,
-                          maxLines: 1,
-                          textInputAction: TextInputAction.send,
-                          keyboardType: TextInputType.text,
-                          inputFormatters: [
-                            FilteringTextInputFormatter.deny(RegExp(r'[\n\r]')),
-                          ],
-                          onSubmitted: (_) => _sendCurrentMessage(),
-                          onChanged: (value) {
-                            if (_patientUserId == null ||
-                                activeRoomId.isEmpty) {
-                              return;
-                            }
-                            ref
-                                .read(realtimeServiceProvider)
-                                .sendTyping(
-                                  activeRoomId,
-                                  _patientUserId!,
-                                  value.trim().isNotEmpty,
-                                );
-                            _typingDebounce?.cancel();
-                            _typingDebounce = Timer(
-                              const Duration(milliseconds: 900),
-                              () {
-                                if (!mounted ||
-                                    _patientUserId == null ||
-                                    activeRoomId.isEmpty) {
-                                  return;
-                                }
-                                ref
-                                    .read(realtimeServiceProvider)
-                                    .sendTyping(
-                                      activeRoomId,
-                                      _patientUserId!,
-                                      false,
-                                    );
-                              },
-                            );
-                          },
-                          decoration: InputDecoration(
-                            hintText: l10n.chatWriteMessageHint,
-                            filled: true,
-                            border: const OutlineInputBorder(
-                              borderSide: BorderSide.none,
-                              borderRadius: BorderRadius.all(
-                                Radius.circular(14),
+                    child: Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.people_outline_rounded, size: 18),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  selectLabel,
+                                  style: theme.textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                               ),
-                            ),
+                            ],
                           ),
                         ),
+                        const Divider(height: 1),
+                        Expanded(
+                          child: doctors.isEmpty
+                              ? const Center(child: Text('Эмчийн жагсаалт хоосон байна'))
+                              : ListView.separated(
+                                  padding: const EdgeInsets.all(8),
+                                  itemCount: doctors.length,
+                                  separatorBuilder: (_, _) => const SizedBox(height: 6),
+                                  itemBuilder: (context, i) {
+                                    final d = doctors[i];
+                                    final did = d['id']?.toString() ?? '';
+                                    final picked = (selectedId != null && selectedId.isNotEmpty) &&
+                                        selectedId == did;
+                                    return Material(
+                                      color: picked
+                                          ? cs.primary.withValues(alpha: 0.1)
+                                          : Colors.transparent,
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: ListTile(
+                                        dense: true,
+                                        title: Text(
+                                          _doctorDisplayName(d),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        subtitle: Text(
+                                          _contactSubtitle(d, isDoctorRole, l10n.localeName),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        onTap: () {
+                                          setState(() => lockedOutDoctor = null);
+                                          _selectDoctor(d);
+                                        },
+                                      ),
+                                    );
+                                  },
+                                ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: Container(
+                      margin: const EdgeInsets.fromLTRB(8, 12, 12, 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(16),
                       ),
-                      const SizedBox(width: 8),
-                      FilledButton(
-                        onPressed: !isAuthed || activeRoomId.isEmpty
-                            ? null
-                            : _sendCurrentMessage,
-                        child: const Icon(Icons.send),
-                      ),
-                    ],
+                      child: chatColumn(showDropdown: false),
+                    ),
                   ),
                 ],
               ),
             ),
-          ),
-        ],
+          );
+        },
       );
     }
 

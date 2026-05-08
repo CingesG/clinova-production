@@ -158,7 +158,7 @@ class PatientDesktopContainer extends StatelessWidget {
 
   final Widget child;
 
-  static const double maxWidth = 1360;
+  static const double maxWidth = 1280;
 
   static bool isDesktopWidth(double width) => width >= 900;
 
