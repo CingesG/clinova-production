@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
@@ -13,6 +14,7 @@ final realtimeServiceProvider = Provider<RealtimeService>((ref) {
 
 class RealtimeService {
   io.Socket? _socket;
+  String _currentAccessToken = '';
   final StreamController<Map<String, dynamic>> _chatStream =
       StreamController<Map<String, dynamic>>.broadcast();
   final StreamController<Map<String, dynamic>> _typingStream =
@@ -44,28 +46,44 @@ class RealtimeService {
   Stream<Map<String, dynamic>> get chatRequestResolvedStream =>
       _chatRequestResolvedStream.stream;
 
-  void connect({String? userId}) {
+  void connect({String? userId, String? accessToken}) {
     final normalizedUserId = (userId ?? '').trim();
+    final normalizedAccessToken = (accessToken ?? '').trim();
     if (_socket != null) {
       final existingQuery = _socket!.io.options?['query'];
       final existingUserId = existingQuery is Map
           ? (existingQuery['userId']?.toString() ?? '').trim()
           : '';
-      if (existingUserId != normalizedUserId) {
+      if (existingUserId != normalizedUserId ||
+          _currentAccessToken != normalizedAccessToken) {
         _socket!.dispose();
         _socket = null;
       }
     }
 
-    _socket ??= io.io(
-      '${AppConfig.realtimeBaseUrl}/realtime',
-      io.OptionBuilder()
-          .setTransports(['websocket'])
-          .setQuery({'userId': normalizedUserId})
-          .setAuth({'userId': normalizedUserId})
-          .disableAutoConnect()
-          .build(),
-    );
+    _currentAccessToken = normalizedAccessToken;
+    try {
+      _socket ??= io.io(
+        '${AppConfig.realtimeBaseUrl}/realtime',
+        io.OptionBuilder()
+            .setTransports(['polling', 'websocket'])
+            .setQuery({'userId': normalizedUserId})
+            .setAuth({'token': normalizedAccessToken, 'userId': normalizedUserId})
+            .setReconnectionAttempts(5)
+            .setReconnectionDelay(1500)
+            .disableAutoConnect()
+            .build(),
+      );
+    } catch (e, st) {
+      developer.log(
+        'Realtime socket init failed (fallback to non-realtime mode)',
+        name: 'RealtimeService',
+        error: e,
+        stackTrace: st,
+      );
+      _socket = null;
+      return;
+    }
     _socket!
       ..off('chat:message')
       ..off('chat:typing')
@@ -78,45 +96,96 @@ class RealtimeService {
       ..off('appointments:updated')
       ..off('chat:request')
       ..off('chat:request:resolved')
+      ..off('connect')
+      ..off('connect_error')
+      ..off('disconnect')
+      ..off('error')
+      ..on('connect', (_) {
+        developer.log(
+          'Realtime connected: ${_socket?.id ?? 'unknown'}',
+          name: 'RealtimeService',
+        );
+      })
+      ..on('connect_error', (error) {
+        developer.log(
+          'Realtime connect error',
+          name: 'RealtimeService',
+          error: error,
+        );
+      })
+      ..on('disconnect', (reason) {
+        developer.log(
+          'Realtime disconnected: ${reason ?? 'unknown'}',
+          name: 'RealtimeService',
+        );
+      })
+      ..on('error', (error) {
+        developer.log(
+          'Realtime socket error',
+          name: 'RealtimeService',
+          error: error,
+        );
+      })
       ..on('chat:message', (data) {
-        _chatStream.add(Map<String, dynamic>.from(data as Map));
+        final map = _asMap(data);
+        if (map != null) _chatStream.add(map);
       })
       ..on('chat:typing', (data) {
-        _typingStream.add(Map<String, dynamic>.from(data as Map));
+        final map = _asMap(data);
+        if (map != null) _typingStream.add(map);
       })
       ..on('presence:changed', (data) {
-        _presenceStream.add(Map<String, dynamic>.from(data as Map));
+        final map = _asMap(data);
+        if (map != null) _presenceStream.add(map);
       })
       ..on('appointments:booked', (data) {
-        _appointmentBookedStream.add(Map<String, dynamic>.from(data as Map));
+        final map = _asMap(data);
+        if (map != null) _appointmentBookedStream.add(map);
       })
       ..on('appointments:updated', (data) {
-        _appointmentUpdatedStream.add(Map<String, dynamic>.from(data as Map));
+        final map = _asMap(data);
+        if (map != null) _appointmentUpdatedStream.add(map);
       })
       ..on('chat:request', (data) {
-        _chatRequestStream.add(Map<String, dynamic>.from(data as Map));
+        final map = _asMap(data);
+        if (map != null) _chatRequestStream.add(map);
       })
       ..on('chat:request:resolved', (data) {
-        _chatRequestResolvedStream.add(Map<String, dynamic>.from(data as Map));
+        final map = _asMap(data);
+        if (map != null) _chatRequestResolvedStream.add(map);
       })
       ..on('call:offer', (data) {
-        _callSignalStream.add({'event': 'call:offer', ...Map<String, dynamic>.from(data as Map)});
+        final map = _asMap(data);
+        if (map != null) _callSignalStream.add({'event': 'call:offer', ...map});
       })
       ..on('call:answer', (data) {
-        _callSignalStream.add({'event': 'call:answer', ...Map<String, dynamic>.from(data as Map)});
+        final map = _asMap(data);
+        if (map != null) _callSignalStream.add({'event': 'call:answer', ...map});
       })
       ..on('call:ice', (data) {
-        _callSignalStream.add({'event': 'call:ice', ...Map<String, dynamic>.from(data as Map)});
+        final map = _asMap(data);
+        if (map != null) _callSignalStream.add({'event': 'call:ice', ...map});
       })
       ..on('call:end', (data) {
-        _callSignalStream.add({'event': 'call:end', ...Map<String, dynamic>.from(data as Map)});
+        final map = _asMap(data);
+        if (map != null) _callSignalStream.add({'event': 'call:end', ...map});
       });
-    _socket!.connect();
+    try {
+      _socket!.connect();
+    } catch (e, st) {
+      developer.log(
+        'Realtime connect invoke failed',
+        name: 'RealtimeService',
+        error: e,
+        stackTrace: st,
+      );
+    }
   }
 
   void disconnect() {
     _socket?.dispose();
     _socket = null;
+    _currentAccessToken = '';
   }
 
   void joinRoom(String roomId) {
@@ -214,6 +283,7 @@ class RealtimeService {
   void dispose() {
     _socket?.dispose();
     _socket = null;
+    _currentAccessToken = '';
     _chatStream.close();
     _typingStream.close();
     _callSignalStream.close();
@@ -222,5 +292,17 @@ class RealtimeService {
     _appointmentUpdatedStream.close();
     _chatRequestStream.close();
     _chatRequestResolvedStream.close();
+  }
+
+  Map<String, dynamic>? _asMap(dynamic data) {
+    if (data is Map) {
+      return Map<String, dynamic>.from(data);
+    }
+    if (data == null) return null;
+    developer.log(
+      'Realtime event payload is not a map: ${data.runtimeType}',
+      name: 'RealtimeService',
+    );
+    return null;
   }
 }

@@ -101,8 +101,9 @@ class _RealtimeConnectionScopeState
 
   void _syncAuth(AuthState auth) {
     final uid = auth.user?.id.trim();
+    final token = auth.token?.trim() ?? '';
     if (auth.isAuthenticated && uid != null && uid.isNotEmpty) {
-      ref.read(realtimeServiceProvider).connect(userId: uid);
+      ref.read(realtimeServiceProvider).connect(userId: uid, accessToken: token);
     } else {
       ref.read(realtimeServiceProvider).disconnect();
     }

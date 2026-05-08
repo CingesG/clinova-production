@@ -7,7 +7,8 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { MessageType } from '@prisma/client';
 import { Server, Socket } from 'socket.io';
 import { ChatService } from '../chat/chat.service';
@@ -20,10 +21,12 @@ import { socketIoBrowserCorsOptions } from '../../common/cors-origins';
 })
 export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly onlineUsers = new Map<string, string>();
+  private readonly logger = new Logger(RealtimeGateway.name);
 
   constructor(
     private readonly chatService: ChatService,
     private readonly chatPermission: ChatPermissionService,
+    private readonly jwtService: JwtService,
   ) {}
 
   @WebSocketServer()
@@ -31,16 +34,24 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   handleConnection(client: Socket) {
     const userId = this.getUserId(client);
-    if (userId) {
-      this.onlineUsers.set(client.id, userId);
-      void client.join(this.userRoomName(userId));
-      this.server.emit('presence:changed', { userId, status: 'online' });
+    if (!userId) {
+      this.logger.warn(`Socket auth failure: client=${client.id}`);
+      client.emit('system:error', { message: 'Unauthorized socket user' });
+      client.disconnect(true);
+      return;
     }
+    this.onlineUsers.set(client.id, userId);
+    void client.join(this.userRoomName(userId));
+    this.server.emit('presence:changed', { userId, status: 'online' });
+    this.logger.log(`Socket connected: client=${client.id} user=${userId}`);
     client.emit('system:connected', { message: 'Connected to Clinova realtime' });
   }
 
   handleDisconnect(client: Socket) {
     const userId = this.onlineUsers.get(client.id);
+    this.logger.log(
+      `Socket disconnected: client=${client.id} user=${userId ?? 'unknown'}`,
+    );
     if (userId) {
       this.server.emit('presence:changed', { userId, status: 'offline' });
       this.onlineUsers.delete(client.id);
@@ -266,6 +277,22 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   }
 
   private getUserId(client: Socket) {
+    const rawToken = client.handshake.auth?.token;
+    if (typeof rawToken === 'string' && rawToken.trim().length > 0) {
+      try {
+        const payload = this.jwtService.verify<{ sub?: string; userId?: string }>(
+          rawToken.trim(),
+        );
+        const tokenUserId = payload.sub?.trim() || payload.userId?.trim();
+        if (tokenUserId) {
+          return tokenUserId;
+        }
+      } catch (error) {
+        this.logger.warn(
+          `Socket token verify failed: client=${client.id} error=${error instanceof Error ? error.message : 'unknown'}`,
+        );
+      }
+    }
     const direct = client.handshake.auth?.userId;
     if (typeof direct === 'string' && direct.trim().length > 0) {
       return direct.trim();
