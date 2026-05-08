@@ -20,23 +20,30 @@ class ClinovaApp extends ConsumerWidget {
     return MaterialApp.router(
       builder: (context, child) {
         final routed = child ?? const SizedBox.shrink();
-        // Web desktop: force narrow column so wide-viewport layout bugs cannot blank the UI.
+        // Web: full-width Flutter view; only routed content is clamped/centered in Dart.
         final content = kIsWeb
             ? LayoutBuilder(
                 builder: (context, constraints) {
-                  const breakpoint = 900.0;
-                  const maxW = 520.0;
-                  if (constraints.maxWidth <= breakpoint) {
-                    return routed;
-                  }
+                  final shouldClamp = constraints.maxWidth > 900;
+                  final effectiveWidth = shouldClamp
+                      ? 520.0
+                      : constraints.maxWidth;
                   final mq = MediaQuery.of(context);
-                  return Align(
-                    alignment: Alignment.topCenter,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: maxW),
-                      child: MediaQuery(
-                        data: mq.copyWith(size: Size(maxW, mq.size.height)),
-                        child: routed,
+                  return ColoredBox(
+                    color: const Color(0xFFF8FBFF),
+                    child: Align(
+                      alignment: Alignment.topCenter,
+                      child: SizedBox(
+                        width: effectiveWidth,
+                        child: MediaQuery(
+                          data: mq.copyWith(
+                            size: Size(
+                              effectiveWidth,
+                              mq.size.height,
+                            ),
+                          ),
+                          child: routed,
+                        ),
                       ),
                     ),
                   );

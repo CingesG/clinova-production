@@ -52,30 +52,27 @@
 
   <link rel="manifest" href="manifest.json">
 
-  <!-- Emergency: wide desktop — constrain canvas so mobile/tablet layout stays visible (Flutter may ignore; Dart also clamps). -->
+  <!-- Full-viewport Flutter host; content width clamp is Dart-only (app.dart). Do NOT max-width flutter-view here — breaks absolute layout. -->
   <style>
     html, body {
-      margin: 0;
-      padding: 0;
+      width: 100%;
       min-height: 100vh;
-      background: #f8fbff;
+      margin: 0;
       overflow-x: hidden;
       overflow-y: auto;
+      background: #f8fbff;
     }
-    /* Flutter web embed targets (varies by version) */
-    flutter-view, flt-glass-pane, #flt-glass-pane {
-      display: block;
-      visibility: visible;
-      min-height: 100vh;
-      box-sizing: border-box;
-    }
-    @media (min-width: 900px) {
-      flutter-view, flt-glass-pane, #flt-glass-pane {
-        max-width: 520px;
-        width: 100% !important;
-        margin-left: auto !important;
-        margin-right: auto !important;
-      }
+    flutter-view,
+    flt-glass-pane,
+    #flt-glass-pane {
+      width: 100vw !important;
+      min-width: 100vw !important;
+      max-width: none !important;
+      min-height: 100vh !important;
+      margin: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      transform: none !important;
     }
   </style>
 
