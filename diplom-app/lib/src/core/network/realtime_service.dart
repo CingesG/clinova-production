@@ -45,6 +45,7 @@ class RealtimeService {
       _chatRequestStream.stream;
   Stream<Map<String, dynamic>> get chatRequestResolvedStream =>
       _chatRequestResolvedStream.stream;
+  bool get isConnected => _socket?.connected == true;
 
   void connect({String? userId, String? accessToken}) {
     final normalizedUserId = (userId ?? '').trim();

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:dio/dio.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -55,7 +56,13 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
   String activeRoomId = '';
   bool loadingDoctors = true;
   bool loadingMessages = false;
+  bool messageLoadTimedOut = false;
+  String? messageLoadError;
   String? loadError;
+  final ValueNotifier<int> _messagesVersion = ValueNotifier<int>(0);
+  Timer? _restPollingTimer;
+  bool _pollInFlight = false;
+  int _loadSeq = 0;
 
   StreamSubscription<Map<String, dynamic>>? _chatSub;
   StreamSubscription<Map<String, dynamic>>? _typingSub;
@@ -228,6 +235,82 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
         curve: Curves.easeOutCubic,
       );
     });
+  }
+
+  void _logChatDebug(
+    String msg, {
+    String? roomId,
+    String? doctorId,
+    int? count,
+  }) {
+    developer.log(
+      '$msg | roomId=${roomId ?? activeRoomId} doctorId=${doctorId ?? selectedDoctor?['id']?.toString() ?? ''} messages=${count ?? messages.length}',
+      name: 'DoctorChatScreen',
+    );
+  }
+
+  void _replaceOrAppendMessage(Map<String, dynamic> next) {
+    final nextId = next['id']?.toString();
+    final nextMeta = next['metadata'];
+    final nextClientId = nextMeta is Map
+        ? nextMeta['clientMessageId']?.toString()
+        : null;
+    if (nextId != null && nextId.isNotEmpty) {
+      final idx = messages.indexWhere((m) => m['id']?.toString() == nextId);
+      if (idx >= 0) {
+        messages[idx] = {...messages[idx], ...next};
+        return;
+      }
+    }
+    if (nextClientId != null && nextClientId.isNotEmpty) {
+      final idx = messages.indexWhere((m) {
+        final md = m['metadata'];
+        if (md is! Map) return false;
+        return md['clientMessageId']?.toString() == nextClientId;
+      });
+      if (idx >= 0) {
+        messages[idx] = {...messages[idx], ...next, 'pending': false};
+        return;
+      }
+    }
+    messages.add(next);
+  }
+
+  void _schedulePollingFallback() {
+    _restPollingTimer?.cancel();
+    _restPollingTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      unawaited(_pollMessagesFallback());
+    });
+  }
+
+  Future<void> _pollMessagesFallback() async {
+    if (!mounted || activeRoomId.isEmpty || _pollInFlight) return;
+    final realtime = ref.read(realtimeServiceProvider);
+    if (realtime.isConnected) return;
+    _pollInFlight = true;
+    _logChatDebug('poll fallback start');
+    try {
+      final history = await ref
+          .read(clinovaApiProvider)
+          .getChatMessages(activeRoomId)
+          .timeout(const Duration(seconds: 10));
+      if (!mounted) return;
+      var changed = false;
+      for (final item in history) {
+        final before = messages.length;
+        _replaceOrAppendMessage(item);
+        if (messages.length != before) changed = true;
+      }
+      if (changed) {
+        _messagesVersion.value++;
+        _scrollToBottom();
+      }
+      _logChatDebug('poll fallback end', count: messages.length);
+    } catch (e) {
+      _logChatDebug('poll fallback error: $e');
+    } finally {
+      _pollInFlight = false;
+    }
   }
 
   Future<void> _resetRtcSession() async {
@@ -414,23 +497,19 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
         }
         return;
       }
-      final id = data['id']?.toString();
-      if (id != null && messages.any((m) => m['id']?.toString() == id)) {
-        return;
-      }
-      setState(() {
-        messages.add(data);
-      });
+      _replaceOrAppendMessage(data);
+      _messagesVersion.value++;
+      _logChatDebug('socket message received', roomId: roomId);
       _scrollToBottom();
     });
     _typingSub = realtime.typingStream.listen((data) {
       if (!mounted) return;
       if ((data['roomId'] ?? '').toString() != activeRoomId) return;
-      setState(() {
-        typingUserId = data['isTyping'] == true
-            ? data['userId']?.toString()
-            : null;
-      });
+      final nextTyping = data['isTyping'] == true
+          ? data['userId']?.toString()
+          : null;
+      if (nextTyping == typingUserId) return;
+      setState(() => typingUserId = nextTyping);
     });
     _callSub = realtime.callSignalStream.listen((data) {
       if (!mounted) return;
@@ -443,6 +522,7 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
         unawaited(_loadDoctors());
       }
     });
+    _schedulePollingFallback();
     Future<void>.microtask(_loadDoctors);
   }
 
@@ -453,6 +533,7 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
     _callSub?.cancel();
     _chatRequestResolvedSub?.cancel();
     _typingDebounce?.cancel();
+    _restPollingTimer?.cancel();
     final rel = _voiceFingerRelease;
     if (rel != null && !rel.isCompleted) {
       rel.complete();
@@ -465,6 +546,7 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
     unawaited(_disposeRtcQuiet());
     input.dispose();
     scroll.dispose();
+    _messagesVersion.dispose();
     super.dispose();
   }
 
@@ -523,7 +605,10 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
           selectedDoctor = null;
           activeRoomId = '';
           messages.clear();
+          messageLoadTimedOut = false;
+          messageLoadError = null;
         });
+        _messagesVersion.value++;
         return;
       }
 
@@ -535,7 +620,10 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
           selectedDoctor = null;
           activeRoomId = '';
           messages.clear();
+          messageLoadTimedOut = false;
+          messageLoadError = null;
         });
+        _messagesVersion.value++;
         return;
       }
 
@@ -547,7 +635,10 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
             selectedDoctor = pick;
             activeRoomId = '';
             messages.clear();
+            messageLoadTimedOut = false;
+            messageLoadError = null;
           });
+          _messagesVersion.value++;
         }
       }
 
@@ -707,6 +798,8 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
         selectedDoctor = doctor;
         activeRoomId = '';
         messages.clear();
+        messageLoadTimedOut = false;
+        messageLoadError = null;
       });
       return;
     }
@@ -733,13 +826,23 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
     }
 
     await _resetRtcSession();
+    final currentLoad = ++_loadSeq;
 
     setState(() {
       selectedDoctor = doctor;
       activeRoomId = room;
       messages.clear();
       loadingMessages = true;
+      messageLoadTimedOut = false;
+      messageLoadError = null;
     });
+    _messagesVersion.value++;
+    _logChatDebug(
+      'fetch start',
+      roomId: room,
+      doctorId: doctor['id']?.toString(),
+      count: 0,
+    );
 
     ref.read(realtimeServiceProvider).joinRoom(room);
     ref
@@ -747,8 +850,11 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
         .joinCall(room, myUserId, callType: 'voice');
 
     try {
-      final history = await ref.read(clinovaApiProvider).getChatMessages(room);
-      if (!mounted) return;
+      final history = await ref
+          .read(clinovaApiProvider)
+          .getChatMessages(room)
+          .timeout(const Duration(seconds: 10));
+      if (!mounted || currentLoad != _loadSeq) return;
       setState(() {
         messages
           ..clear()
@@ -758,10 +864,28 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
           unreadByContact = {...unreadByContact, key: 0};
         }
         loadingMessages = false;
+        messageLoadTimedOut = false;
+        messageLoadError = null;
       });
+      _messagesVersion.value++;
+      _logChatDebug(
+        'fetch end',
+        roomId: room,
+        doctorId: doctor['id']?.toString(),
+        count: history.length,
+      );
       _scrollToBottom();
+      unawaited(_pollMessagesFallback());
+    } on TimeoutException {
+      if (!mounted || currentLoad != _loadSeq) return;
+      setState(() {
+        loadingMessages = false;
+        messageLoadTimedOut = true;
+        messageLoadError = null;
+      });
+      _logChatDebug('fetch timeout', roomId: room, doctorId: doctor['id']?.toString());
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || currentLoad != _loadSeq) return;
       var msg = 'Зурвасыг ачаалж чадсангүй.';
       if (e is DioException) {
         final code = e.response?.statusCode;
@@ -778,7 +902,10 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
       ).showSnackBar(SnackBar(content: Text(msg)));
       setState(() {
         loadingMessages = false;
+        messageLoadTimedOut = false;
+        messageLoadError = msg;
       });
+      _logChatDebug('fetch error: $msg', roomId: room, doctorId: doctor['id']?.toString());
     }
   }
 
@@ -1256,9 +1383,34 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
     if (myId.isEmpty || activeRoomId.isEmpty || text.isEmpty) return;
     final doc = selectedDoctor;
     final receiver = doc != null ? _doctorUserId(doc) : null;
+    final clientMessageId = 'local-${DateTime.now().microsecondsSinceEpoch}';
+    final now = DateTime.now().toIso8601String();
+    setState(() {
+      messages.add({
+        'id': clientMessageId,
+        'roomId': activeRoomId,
+        'senderId': myId,
+        'receiverId': receiver,
+        'text': text,
+        'messageType': 'TEXT',
+        'createdAt': now,
+        'sentAt': now,
+        'pending': true,
+        'metadata': {'clientMessageId': clientMessageId},
+      });
+    });
+    _messagesVersion.value++;
+    _scrollToBottom();
     ref
         .read(realtimeServiceProvider)
-        .sendMessage(activeRoomId, myId, text, receiverId: receiver);
+        .sendMessage(
+          activeRoomId,
+          myId,
+          text,
+          receiverId: receiver,
+          metadata: {'clientMessageId': clientMessageId},
+        );
+    _logChatDebug('send optimistic', roomId: activeRoomId, count: messages.length);
     input.clear();
     ref.read(realtimeServiceProvider).sendTyping(activeRoomId, myId, false);
   }
@@ -1859,78 +2011,138 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
               ),
             ),
           Expanded(
-            child: loadingMessages
-                ? const Center(child: CircularProgressIndicator())
-                : ListView.builder(
-                    controller: scroll,
-                    padding: const EdgeInsets.all(16),
-                    itemCount: messages.length,
-                    itemBuilder: (context, index) {
-                      final m = messages[index];
-                      final mine = m['senderId']?.toString() == myId;
-                      final ts = _formatChatTimestamp(m);
-                      return Align(
-                        alignment: mine
-                            ? Alignment.centerRight
-                            : Alignment.centerLeft,
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: Column(
-                            crossAxisAlignment: mine
-                                ? CrossAxisAlignment.end
-                                : CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 11,
-                                ),
-                                constraints: const BoxConstraints(
-                                  maxWidth: 280,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: mine
-                                      ? const Color(0xFF1877F2)
-                                      : Colors.white,
-                                  borderRadius: BorderRadius.only(
-                                    topLeft: const Radius.circular(18),
-                                    topRight: const Radius.circular(18),
-                                    bottomLeft: Radius.circular(mine ? 18 : 6),
-                                    bottomRight: Radius.circular(mine ? 6 : 18),
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withValues(
-                                        alpha: 0.06,
-                                      ),
-                                      blurRadius: 8,
-                                      offset: const Offset(0, 3),
-                                    ),
-                                  ],
-                                ),
-                                child: _buildMessageContent(m, mine),
-                              ),
-                              if (ts.isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(
-                                    top: 4,
-                                    left: 6,
-                                    right: 6,
-                                  ),
-                                  child: Text(
-                                    ts,
-                                    style: theme.textTheme.labelSmall?.copyWith(
-                                      color: cs.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ),
-                            ],
+            child: Builder(
+              builder: (context) {
+                if (loadingMessages) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (messageLoadTimedOut) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text(
+                            'Зурвас ачааллах хугацаа хэтэрлээ.',
+                            textAlign: TextAlign.center,
                           ),
-                        ),
+                          const SizedBox(height: 12),
+                          FilledButton(
+                            onPressed: selectedDoctor == null
+                                ? null
+                                : () => _selectDoctor(selectedDoctor!),
+                            child: const Text('Дахин оролдох'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+                if (messageLoadError != null) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(messageLoadError!, textAlign: TextAlign.center),
+                          const SizedBox(height: 12),
+                          FilledButton(
+                            onPressed: selectedDoctor == null
+                                ? null
+                                : () => _selectDoctor(selectedDoctor!),
+                            child: const Text('Дахин оролдох'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+                return ValueListenableBuilder<int>(
+                  valueListenable: _messagesVersion,
+                  builder: (context, version, child) {
+                    if (messages.isEmpty) {
+                      return const Center(
+                        child: Text('Одоогоор чат эхлээгүй байна'),
                       );
-                    },
-                  ),
+                    }
+                    return ListView.builder(
+                      controller: scroll,
+                      padding: const EdgeInsets.all(16),
+                      itemCount: messages.length,
+                      itemBuilder: (context, index) {
+                        final m = messages[index];
+                        final mine = m['senderId']?.toString() == myId;
+                        final ts = _formatChatTimestamp(m);
+                        return Align(
+                          alignment: mine
+                              ? Alignment.centerRight
+                              : Alignment.centerLeft,
+                          child: Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Column(
+                              crossAxisAlignment: mine
+                                  ? CrossAxisAlignment.end
+                                  : CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 11,
+                                  ),
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 280,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: mine
+                                        ? const Color(0xFF1877F2)
+                                        : Colors.white,
+                                    borderRadius: BorderRadius.only(
+                                      topLeft: const Radius.circular(18),
+                                      topRight: const Radius.circular(18),
+                                      bottomLeft: Radius.circular(mine ? 18 : 6),
+                                      bottomRight:
+                                          Radius.circular(mine ? 6 : 18),
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(
+                                          alpha: 0.06,
+                                        ),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 3),
+                                      ),
+                                    ],
+                                  ),
+                                  child: _buildMessageContent(m, mine),
+                                ),
+                                if (ts.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(
+                                      top: 4,
+                                      left: 6,
+                                      right: 6,
+                                    ),
+                                    child: Text(
+                                      ts,
+                                      style: theme.textTheme.labelSmall
+                                          ?.copyWith(
+                                            color: cs.onSurfaceVariant,
+                                          ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                );
+              },
+            ),
           ),
           if (typingUserId != null &&
               typingUserId!.isNotEmpty &&
