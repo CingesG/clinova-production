@@ -63,7 +63,7 @@ class _DoctorChatLandingScreenState
         child: SafeArea(
           child: LayoutBuilder(
             builder: (context, c) {
-              const maxW = 1180.0;
+              const maxW = 1320.0;
               final pad = c.maxWidth >= 900 ? 24.0 : 16.0;
               final wide = c.maxWidth >= 960;
 

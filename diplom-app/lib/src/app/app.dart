@@ -29,8 +29,10 @@ class ClinovaApp extends ConsumerWidget {
                           constraints.maxWidth > 0
                       ? constraints.maxWidth
                       : mq.size.width;
-                  final effectiveWidth =
-                      kIsWeb && width > 1200 ? 1180.0 : width;
+                  // Desktop: use up to 1320px; never wider than the viewport.
+                  final effectiveWidth = kIsWeb && width > 1200
+                      ? (width > 1320 ? 1320.0 : width)
+                      : width;
                   return ColoredBox(
                     color: const Color(0xFFF8FBFF),
                     child: Align(

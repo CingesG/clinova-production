@@ -873,7 +873,7 @@ class _AppointmentScreenState extends ConsumerState<AppointmentScreen> {
         child: SafeArea(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              const maxContent = 1180.0;
+              const maxContent = 1320.0;
               final pad = constraints.maxWidth >= 900 ? 24.0 : 16.0;
               final wide = constraints.maxWidth >= 1020;
 

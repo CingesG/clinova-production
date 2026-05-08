@@ -18,7 +18,7 @@ import '../../auth/application/auth_controller.dart';
 
 const _maxVisionImages = 4;
 const _maxChatContentWidth = 720.0;
-const _maxShellWidth = 1180.0;
+const _maxShellWidth = 1320.0;
 
 const _primaryBlue = Color(0xFF1769FF);
 const _navy = Color(0xFF071B4D);
