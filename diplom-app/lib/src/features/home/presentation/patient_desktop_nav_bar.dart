@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/localization/context_l10n.dart';
 import '../../../core/widgets/clinova_logo.dart';
 
-/// Top navigation for patient flows on wide screens (no bottom dock).
+/// Top navigation for patient flows on wide screens (used together with bottom dock on web).
 class PatientDesktopNavBar extends StatelessWidget {
   const PatientDesktopNavBar({
     super.key,
@@ -158,7 +158,7 @@ class PatientDesktopContainer extends StatelessWidget {
 
   final Widget child;
 
-  static const double maxWidth = 1280;
+  static const double maxWidth = 1180;
 
   static bool isDesktopWidth(double width) => width >= 900;
 

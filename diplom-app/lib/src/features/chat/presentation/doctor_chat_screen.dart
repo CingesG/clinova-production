@@ -56,6 +56,9 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
   bool loadingDoctors = true;
   bool loadingMessages = false;
   String? loadError;
+  String? messageLoadError;
+  bool messageLoadTimedOut = false;
+  int _messageLoadSeq = 0;
 
   StreamSubscription<Map<String, dynamic>>? _chatSub;
   StreamSubscription<Map<String, dynamic>>? _typingSub;
@@ -647,7 +650,7 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'Энэ эмчтэй чатлахын тулд цаг захиалах эсвэл чат хүсэлт илгээнэ үү.',
+                'Эмчтэй чатлахын тулд цаг захиалах эсвэл чат хүсэлт илгээх шаардлагатай.',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.w600,
                   height: 1.35,
@@ -734,11 +737,14 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
 
     await _resetRtcSession();
 
+    final loadSeq = ++_messageLoadSeq;
     setState(() {
       selectedDoctor = doctor;
       activeRoomId = room;
       messages.clear();
       loadingMessages = true;
+      messageLoadError = null;
+      messageLoadTimedOut = false;
     });
 
     ref.read(realtimeServiceProvider).joinRoom(room);
@@ -747,8 +753,14 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
         .joinCall(room, myUserId, callType: 'voice');
 
     try {
-      final history = await ref.read(clinovaApiProvider).getChatMessages(room);
-      if (!mounted) return;
+      final history = await ref
+          .read(clinovaApiProvider)
+          .getChatMessages(room)
+          .timeout(
+            const Duration(seconds: 12),
+            onTimeout: () => throw TimeoutException('chat history'),
+          );
+      if (!mounted || loadSeq != _messageLoadSeq) return;
       setState(() {
         messages
           ..clear()
@@ -758,10 +770,19 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
           unreadByContact = {...unreadByContact, key: 0};
         }
         loadingMessages = false;
+        messageLoadError = null;
+        messageLoadTimedOut = false;
       });
       _scrollToBottom();
+    } on TimeoutException {
+      if (!mounted || loadSeq != _messageLoadSeq) return;
+      setState(() {
+        loadingMessages = false;
+        messageLoadTimedOut = true;
+        messageLoadError = null;
+      });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || loadSeq != _messageLoadSeq) return;
       var msg = 'Зурвасыг ачаалж чадсангүй.';
       if (e is DioException) {
         final code = e.response?.statusCode;
@@ -773,11 +794,10 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
               'Эмчтэй чатлахын тулд цаг захиалах эсвэл чат хүсэлтээ зөвшөөрүүлэх шаардлагатай.';
         }
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(msg)));
       setState(() {
         loadingMessages = false;
+        messageLoadError = msg;
+        messageLoadTimedOut = false;
       });
     }
   }
@@ -1749,7 +1769,49 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
         selectedId != null && doctors.any((d) => d['id']?.toString() == selectedId);
 
     Widget messagePane() {
-      if (loadingMessages) return const Center(child: CircularProgressIndicator());
+      if (loadingMessages &&
+          !messageLoadTimedOut &&
+          messageLoadError == null) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      if (messageLoadTimedOut || messageLoadError != null) {
+        return Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  messageLoadTimedOut
+                      ? Icons.timer_off_outlined
+                      : Icons.error_outline_rounded,
+                  size: 40,
+                  color: cs.error,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  messageLoadTimedOut
+                      ? 'Зурвас ачаалах хугацаа хэтэрлээ. Дахин оролдоно уу.'
+                      : messageLoadError!,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: cs.onSurfaceVariant,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: selectedDoctor == null
+                      ? null
+                      : () => unawaited(_selectDoctor(selectedDoctor!)),
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: Text(l10n.branchesRetry),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
       if (messages.isEmpty) {
         return Center(
           child: Text(
@@ -2054,8 +2116,26 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
         ),
       );
     } else {
-      // Root MaterialApp clamps web desktop width; use one safe column everywhere.
-      body = chatColumn(showDropdown: true);
+      body = LayoutBuilder(
+        builder: (context, constraints) {
+          final w = constraints.maxWidth;
+          final chat = chatColumn(showDropdown: true);
+          if (w < 700) {
+            return chat;
+          }
+          final maxChat = w > 960 ? 960.0 : w;
+          return Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: maxChat,
+                maxHeight: constraints.maxHeight,
+              ),
+              child: chat,
+            ),
+          );
+        },
+      );
     }
 
     return Scaffold(

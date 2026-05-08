@@ -328,8 +328,8 @@ class _AppointmentScreenState extends ConsumerState<AppointmentScreen> {
       final api = ref.read(clinovaApiProvider);
 
       var fetched = await api.getDoctors(
-        branchId: selectedBranchId,
-        departmentId: selectedDepartmentId,
+          branchId: selectedBranchId,
+          departmentId: selectedDepartmentId,
         serviceId: serviceId,
       );
 
@@ -368,15 +368,15 @@ class _AppointmentScreenState extends ConsumerState<AppointmentScreen> {
       }
 
       if (!mounted) return;
-      setState(() {
+    setState(() {
         doctors = fetched;
-        selectedDoctorId = doctorPick;
-        slots = const [];
-        recommendedSlots = const [];
-        loadBalancedDoctors = const [];
-        selectedSlot = null;
-        currentStep = 2;
-      });
+      selectedDoctorId = doctorPick;
+      slots = const [];
+      recommendedSlots = const [];
+      loadBalancedDoctors = const [];
+      selectedSlot = null;
+      currentStep = 2;
+    });
 
       await _loadSlots();
     } catch (e) {
@@ -880,10 +880,10 @@ class _AppointmentScreenState extends ConsumerState<AppointmentScreen> {
               Widget mainColumn() {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      children: [
-                        IconButton.filledTonal(
+            children: [
+              Row(
+                children: [
+                  IconButton.filledTonal(
                           onPressed: () => popOrGo(
                             context,
                             clinovaNavigationFallback(
@@ -894,13 +894,13 @@ class _AppointmentScreenState extends ConsumerState<AppointmentScreen> {
                                   ref.read(authControllerProvider).user?.role,
                             ),
                           ),
-                          icon: const Icon(Icons.arrow_back_rounded),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
+                    icon: const Icon(Icons.arrow_back_rounded),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                               Text(
                                 l10n.aptTitle,
                                 style: theme.textTheme.titleLarge?.copyWith(
@@ -908,39 +908,39 @@ class _AppointmentScreenState extends ConsumerState<AppointmentScreen> {
                                   color: const Color(0xFF102A43),
                                 ),
                               ),
-                              const SizedBox(height: 2),
-                              Text(
-                                l10n.aptSubtitle,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: cs.onSurface.withValues(alpha: 0.72),
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
+                        const SizedBox(height: 2),
+                        Text(
+                          l10n.aptSubtitle,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: cs.onSurface.withValues(alpha: 0.72),
                           ),
+                                maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        Icon(Icons.calendar_month_rounded, color: cs.primary),
                       ],
                     ),
+                  ),
+                  Icon(Icons.calendar_month_rounded, color: cs.primary),
+                ],
+              ),
                     const SizedBox(height: 14),
-                    if (isCatalogLoading)
-                      const Padding(
+              if (isCatalogLoading)
+                const Padding(
                         padding: EdgeInsets.symmetric(vertical: 40),
-                        child: Center(child: CircularProgressIndicator()),
-                      )
-                    else ...[
-                      if (departments.isEmpty && branches.isNotEmpty)
-                        Padding(
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else ...[
+                if (departments.isEmpty && branches.isNotEmpty)
+                  Padding(
                           padding: const EdgeInsets.only(bottom: 8),
-                          child: Text(
-                            l10n.aptBranchNoServices,
-                            style: TextStyle(
-                              color: cs.error,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
+                    child: Text(
+                      l10n.aptBranchNoServices,
+                      style: TextStyle(
+                        color: cs.error,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
                       _BookingStepBar(currentStep: currentStep, l10n: l10n),
                       const SizedBox(height: 8),
                       Text(
@@ -952,33 +952,33 @@ class _AppointmentScreenState extends ConsumerState<AppointmentScreen> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      _BookingChoicesCard(
-                        l10n: l10n,
-                        branchLabel: l10n.aptChooseBranch,
-                        branchValue: _displayBranch(l10n),
-                        branchFilled: selectedBranchId != null,
-                        onBranch: () => _onPickBranch(l10n),
-                        branchEnabled: branches.isNotEmpty,
-                        departmentLabel: l10n.aptChooseDepartment,
-                        departmentValue: _displayDepartment(l10n),
-                        departmentFilled: selectedDepartmentId != null,
-                        onDepartment: () => _onPickDepartment(l10n),
-                        departmentEnabled: departments.isNotEmpty,
-                        serviceLabel: l10n.aptChooseService,
-                        serviceValue: _displayService(l10n),
-                        serviceFilled: selectedServiceId != null,
-                        onService: () => _onPickService(l10n),
-                        serviceEnabled: services.isNotEmpty,
+                _BookingChoicesCard(
+                  l10n: l10n,
+                  branchLabel: l10n.aptChooseBranch,
+                  branchValue: _displayBranch(l10n),
+                  branchFilled: selectedBranchId != null,
+                  onBranch: () => _onPickBranch(l10n),
+                  branchEnabled: branches.isNotEmpty,
+                  departmentLabel: l10n.aptChooseDepartment,
+                  departmentValue: _displayDepartment(l10n),
+                  departmentFilled: selectedDepartmentId != null,
+                  onDepartment: () => _onPickDepartment(l10n),
+                  departmentEnabled: departments.isNotEmpty,
+                  serviceLabel: l10n.aptChooseService,
+                  serviceValue: _displayService(l10n),
+                  serviceFilled: selectedServiceId != null,
+                  onService: () => _onPickService(l10n),
+                  serviceEnabled: services.isNotEmpty,
                         showDoctorPicker: false,
-                        doctorLabel: l10n.aptChooseDoctor,
-                        doctorValue: _displayDoctor(l10n),
-                        doctorFilled: selectedDoctorId != null,
-                        onDoctor: () => _onPickDoctor(l10n),
-                        doctorEnabled: doctors.isNotEmpty,
-                        reasonTitle: l10n.aptVisitReason,
-                        reasonHint: l10n.aptReasonHint,
-                        reasonController: reasonController,
-                      ),
+                  doctorLabel: l10n.aptChooseDoctor,
+                  doctorValue: _displayDoctor(l10n),
+                  doctorFilled: selectedDoctorId != null,
+                  onDoctor: () => _onPickDoctor(l10n),
+                  doctorEnabled: doctors.isNotEmpty,
+                  reasonTitle: l10n.aptVisitReason,
+                  reasonHint: l10n.aptReasonHint,
+                  reasonController: reasonController,
+                ),
                       if (selectedServiceId != null) ...[
                         const SizedBox(height: 16),
                         Text(
@@ -994,7 +994,7 @@ class _AppointmentScreenState extends ConsumerState<AppointmentScreen> {
                             color: cs.onSurfaceVariant,
                           ),
                         ),
-                        const SizedBox(height: 10),
+                  const SizedBox(height: 10),
                         if (doctorsUsedDeptFallback)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 10),
@@ -1116,210 +1116,210 @@ class _AppointmentScreenState extends ConsumerState<AppointmentScreen> {
                       ],
                       if (intakeFields.isNotEmpty) ...[
                         const SizedBox(height: 12),
-                        _DynamicIntakeCard(
-                          fields: intakeFields,
-                          answers: intakeAnswers,
-                          onChanged: (id, value) {
-                            setState(() {
-                              if (value == null ||
-                                  (value is String && value.trim().isEmpty)) {
-                                intakeAnswers.remove(id);
-                              } else {
-                                intakeAnswers[id] = value;
-                              }
-                            });
-                          },
-                        ),
-                      ],
-                      if (services.isEmpty &&
-                          departments.isNotEmpty &&
-                          selectedDepartmentId != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 10),
-                          child: Text(
-                            l10n.aptNoServicesForDept,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: cs.onSurfaceVariant,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
+                  _DynamicIntakeCard(
+                    fields: intakeFields,
+                    answers: intakeAnswers,
+                    onChanged: (id, value) {
+                      setState(() {
+                        if (value == null ||
+                            (value is String && value.trim().isEmpty)) {
+                          intakeAnswers.remove(id);
+                        } else {
+                          intakeAnswers[id] = value;
+                        }
+                      });
+                    },
+                  ),
+                ],
+                if (services.isEmpty &&
+                    departments.isNotEmpty &&
+                    selectedDepartmentId != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: Text(
+                      l10n.aptNoServicesForDept,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
                       if (selectedDoctorId != null) ...[
                         const SizedBox(height: 18),
-                        Text(
-                          l10n.aptAvailableSlots,
+                Text(
+                  l10n.aptAvailableSlots,
                           style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: List.generate(7, (index) {
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: List.generate(7, (index) {
                             final date =
                                 DateTime.now().add(Duration(days: index));
-                            final selected =
-                                DateFormat('yyyy-MM-dd').format(date) ==
+                    final selected =
+                        DateFormat('yyyy-MM-dd').format(date) ==
                                     DateFormat('yyyy-MM-dd')
                                         .format(selectedDate);
-                            return ChoiceChip(
-                              label: Text(
+                    return ChoiceChip(
+                      label: Text(
                                 DateFormat('EEE d', l10n.localeName)
                                     .format(date),
-                              ),
-                              selected: selected,
-                              onSelected: (_) async {
-                                await _clearSlotSelection();
-                                setState(() {
-                                  selectedDate = date;
-                                });
-                                await _loadSlots();
-                              },
-                            );
-                          }),
-                        ),
-                        const SizedBox(height: 12),
-                        if (loadBalancedDoctors.isNotEmpty) ...[
-                          Text(
-                            l10n.aptSuggestedDoctorsTitle,
+                      ),
+                      selected: selected,
+                      onSelected: (_) async {
+                        await _clearSlotSelection();
+                        setState(() {
+                          selectedDate = date;
+                        });
+                        await _loadSlots();
+                      },
+                    );
+                  }),
+                ),
+                const SizedBox(height: 12),
+                if (loadBalancedDoctors.isNotEmpty) ...[
+                  Text(
+                    l10n.aptSuggestedDoctorsTitle,
                             style: theme.textTheme.labelLarge?.copyWith(
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              for (final doc in loadBalancedDoctors)
-                                ActionChip(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final doc in loadBalancedDoctors)
+                        ActionChip(
                                   avatar: Icon(
                                     Icons.bolt_rounded,
                                     size: 18,
                                     color: cs.primary,
                                   ),
-                                  label: Text(
-                                    '${doc['doctorName'] ?? l10n.homeFallbackDoctor} · ${l10n.aptQueueLabel(int.tryParse((doc['activeQueueToday'] ?? doc['doctorLoad'] ?? 0).toString()) ?? 0)}',
+                          label: Text(
+                            '${doc['doctorName'] ?? l10n.homeFallbackDoctor} · ${l10n.aptQueueLabel(int.tryParse((doc['activeQueueToday'] ?? doc['doctorLoad'] ?? 0).toString()) ?? 0)}',
                                     style: theme.textTheme.labelMedium,
-                                  ),
-                                  onPressed: () async {
-                                    final id = doc['doctorId']?.toString();
-                                    if (id == null || id.isEmpty) return;
-                                    await _onSelectDoctor(id);
-                                  },
-                                ),
-                            ],
                           ),
+                          onPressed: () async {
+                            final id = doc['doctorId']?.toString();
+                            if (id == null || id.isEmpty) return;
+                                    await _onSelectDoctor(id);
+                          },
+                        ),
+                    ],
+                  ),
                           const SizedBox(height: 10),
-                        ],
-                        if (isSlotsLoading)
+                ],
+                if (isSlotsLoading)
                           const Padding(
                             padding: EdgeInsets.symmetric(vertical: 20),
                             child:
                                 Center(child: CircularProgressIndicator()),
                           )
-                        else if (slots.isEmpty)
+                else if (slots.isEmpty)
                           _EmptySlotsCard(
                             l10n: l10n,
                             canWaitlist: selectedServiceId != null &&
                                 ref
-                                    .read(authControllerProvider)
+                                      .read(authControllerProvider)
                                     .isAuthenticated,
                             onWaitlist: () async {
                               final date = DateFormat('yyyy-MM-dd')
                                   .format(selectedDate);
-                              await ref
-                                  .read(clinovaApiProvider)
-                                  .joinAppointmentWaitlist(
-                                    serviceId: selectedServiceId!,
-                                    branchId: selectedBranchId,
-                                    departmentId: selectedDepartmentId,
-                                    preferredDate: date,
-                                    preferredHourStart: 9,
-                                    preferredHourEnd: 20,
-                                    note: reasonController.text.trim(),
-                                  );
-                              if (!context.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
+                                  await ref
+                                      .read(clinovaApiProvider)
+                                      .joinAppointmentWaitlist(
+                                        serviceId: selectedServiceId!,
+                                        branchId: selectedBranchId,
+                                        departmentId: selectedDepartmentId,
+                                        preferredDate: date,
+                                        preferredHourStart: 9,
+                                        preferredHourEnd: 20,
+                                        note: reasonController.text.trim(),
+                                      );
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
                                     content: Text(l10n.aptAddedToWaitlist)),
-                              );
-                            },
-                          )
-                        else
+                                  );
+                                },
+                  )
+                else
                           _SlotTimeGrid(
                             slots: slots,
                             recommendedIds: {
                               for (final s in recommendedSlots) _slotKey(s),
                             },
                             selectedSlot: selectedSlot,
-                            isBooking: isBooking,
+                        isBooking: isBooking,
                             onPick: _selectSlot,
                             l10n: l10n,
                             dense: wide,
                           ),
                       ],
-                      if (selectedSlot != null) ...[
-                        const SizedBox(height: 12),
-                        _BookingConfirmCard(
-                          slot: selectedSlot!,
-                          l10n: l10n,
-                          isBooking: isBooking,
-                          onConfirm: _confirmSelectedSlot,
-                          onCancel: () async {
-                            await _clearSlotSelection();
-                            if (!mounted) return;
-                            setState(() => currentStep = 2);
-                          },
-                        ),
-                      ],
-                      if (errorMessage != null) ...[
-                        const SizedBox(height: 12),
+                if (selectedSlot != null) ...[
+                  const SizedBox(height: 12),
+                  _BookingConfirmCard(
+                    slot: selectedSlot!,
+                    l10n: l10n,
+                    isBooking: isBooking,
+                    onConfirm: _confirmSelectedSlot,
+                    onCancel: () async {
+                      await _clearSlotSelection();
+                      if (!mounted) return;
+                      setState(() => currentStep = 2);
+                    },
+                  ),
+                ],
+                if (errorMessage != null) ...[
+                  const SizedBox(height: 12),
                         SelectableText(
-                          errorMessage!,
-                          style: const TextStyle(color: Color(0xFFB42318)),
-                        ),
-                      ],
+                    errorMessage!,
+                    style: const TextStyle(color: Color(0xFFB42318)),
+                  ),
+                ],
                       const SizedBox(height: 10),
-                      Material(
-                        color: Colors.white.withValues(alpha: 0.88),
-                        shape: RoundedRectangleBorder(
+                Material(
+                  color: Colors.white.withValues(alpha: 0.88),
+                  shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
-                        ),
-                        clipBehavior: Clip.antiAlias,
-                        child: Theme(
-                          data: theme.copyWith(dividerColor: Colors.transparent),
-                          child: ExpansionTile(
-                            initiallyExpanded: false,
-                            tilePadding: const EdgeInsets.symmetric(
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Theme(
+                    data: theme.copyWith(dividerColor: Colors.transparent),
+                    child: ExpansionTile(
+                      initiallyExpanded: false,
+                      tilePadding: const EdgeInsets.symmetric(
                               horizontal: 14,
                               vertical: 2,
-                            ),
+                      ),
                             childrenPadding:
                                 const EdgeInsets.fromLTRB(10, 0, 10, 10),
-                            title: Text(
-                              l10n.aptPendingListTitle,
-                              style: theme.textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w800,
+                      title: Text(
+                        l10n.aptPendingListTitle,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      subtitle: upcomingAppointments.isEmpty
+                          ? null
+                          : Text(
+                              '${upcomingAppointments.length}',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: cs.primary,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
-                            subtitle: upcomingAppointments.isEmpty
-                                ? null
-                                : Text(
-                                    '${upcomingAppointments.length}',
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: cs.primary,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                            children: [
-                              if (upcomingAppointments.isEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: Text(l10n.aptNoPending),
-                                )
-                              else
+                      children: [
+                        if (upcomingAppointments.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Text(l10n.aptNoPending),
+                          )
+                        else
                                 ..._groupUpcomingByDoctor(
                                   context,
                                   upcomingAppointments,
@@ -1735,7 +1735,7 @@ class _SlotTimeGrid extends StatelessWidget {
       children: [
         if (recommendedIds.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.only(bottom: 8),
             child: Row(
               children: [
                 Icon(Icons.auto_awesome_rounded,
@@ -1814,11 +1814,11 @@ class _SlotTimeGrid extends StatelessWidget {
                                   style: theme.textTheme.labelSmall?.copyWith(
                                     color: cs.primary,
                                     fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                            ],
+                            ),
                           ),
-                        ),
+                      ],
+                    ),
+                  ),
                       ),
                     ),
                   );
@@ -2479,18 +2479,18 @@ class _BookingChoicesCard extends StatelessWidget {
                         ),
                       ),
                       if (showDoctorPicker)
-                        SizedBox(
-                          width: compactWidth,
-                          child: _CompactPickTile(
-                            label: doctorLabel,
-                            value: doctorValue,
-                            isFilled: doctorFilled,
-                            enabled: doctorEnabled,
-                            onTap: onDoctor,
-                            dense: true,
-                            boxed: true,
-                          ),
+                      SizedBox(
+                        width: compactWidth,
+                        child: _CompactPickTile(
+                          label: doctorLabel,
+                          value: doctorValue,
+                          isFilled: doctorFilled,
+                          enabled: doctorEnabled,
+                          onTap: onDoctor,
+                          dense: true,
+                          boxed: true,
                         ),
+                      ),
                     ],
                   ),
                 )
@@ -2529,19 +2529,19 @@ class _BookingChoicesCard extends StatelessWidget {
                   onTap: onService,
                 ),
                 if (showDoctorPicker) ...[
-                  Divider(
-                    height: 1,
-                    indent: 16,
-                    endIndent: 16,
-                    color: cs.outline.withValues(alpha: 0.12),
-                  ),
-                  _CompactPickTile(
-                    label: doctorLabel,
-                    value: doctorValue,
-                    isFilled: doctorFilled,
-                    enabled: doctorEnabled,
-                    onTap: onDoctor,
-                  ),
+                Divider(
+                  height: 1,
+                  indent: 16,
+                  endIndent: 16,
+                  color: cs.outline.withValues(alpha: 0.12),
+                ),
+                _CompactPickTile(
+                  label: doctorLabel,
+                  value: doctorValue,
+                  isFilled: doctorFilled,
+                  enabled: doctorEnabled,
+                  onTap: onDoctor,
+                ),
                 ],
               ],
               Divider(
@@ -2911,17 +2911,17 @@ class _MyAppointmentCard extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      service['name']?.toString() ?? l10n.consultationFallback,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 6),
-                    Text(l10n.aptDoctorLabel(fn, ln)),
-                    const SizedBox(height: 4),
-                    Text(branch['name']?.toString() ?? ''),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            service['name']?.toString() ?? l10n.consultationFallback,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 6),
+          Text(l10n.aptDoctorLabel(fn, ln)),
+          const SizedBox(height: 4),
+          Text(branch['name']?.toString() ?? ''),
                   ],
                 ),
               ),

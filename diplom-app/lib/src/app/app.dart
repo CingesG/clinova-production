@@ -24,23 +24,22 @@ class ClinovaApp extends ConsumerWidget {
         final content = kIsWeb
             ? LayoutBuilder(
                 builder: (context, constraints) {
-                  final shouldClamp = constraints.maxWidth > 900;
-                  final effectiveWidth = shouldClamp
-                      ? 520.0
-                      : constraints.maxWidth;
                   final mq = MediaQuery.of(context);
+                  final width = constraints.maxWidth.isFinite &&
+                          constraints.maxWidth > 0
+                      ? constraints.maxWidth
+                      : mq.size.width;
+                  final effectiveWidth =
+                      kIsWeb && width > 1200 ? 1180.0 : width;
                   return ColoredBox(
                     color: const Color(0xFFF8FBFF),
                     child: Align(
                       alignment: Alignment.topCenter,
-                      child: SizedBox(
-                        width: effectiveWidth,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: effectiveWidth),
                         child: MediaQuery(
                           data: mq.copyWith(
-                            size: Size(
-                              effectiveWidth,
-                              mq.size.height,
-                            ),
+                            size: Size(effectiveWidth, mq.size.height),
                           ),
                           child: routed,
                         ),

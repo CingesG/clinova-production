@@ -1,5 +1,4 @@
 import 'package:diplom_app/l10n/app_localizations.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -246,10 +245,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final user = authState.user;
     final isAuthed = authState.isAuthenticated;
     final screenW = MediaQuery.sizeOf(context).width;
-    // Web: always use mobile/tablet home layout (desktop branch disabled for stability).
-    final isDesktop =
-        !kIsWeb && PatientDesktopContainer.isDesktopWidth(screenW);
-    final showDockSpace = isAuthed && user?.role == 'PATIENT' && !isDesktop;
+    final isDesktop = PatientDesktopContainer.isDesktopWidth(screenW);
+    final showDockSpace = isAuthed && user?.role == 'PATIENT';
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
     return Scaffold(
@@ -668,18 +665,21 @@ class _HomeQuickActions extends StatelessWidget {
       ),
     ];
 
-    final isDesktop = screenWidth >= 900;
-    final useHScroll = screenWidth < 600;
+    // <700px: same compact pattern as phones (horizontal strip); avoids 2-col grids on phablets.
+    final useCompactQuickActions = screenWidth < 700;
+    final gridCols = screenWidth >= 1100 ? 3 : 2;
 
     Widget card(_QuickActionSpec s) {
       return _QuickActionCard(spec: s, theme: theme);
     }
 
-    if (useHScroll) {
+    if (useCompactQuickActions) {
       return SizedBox(
         height: 118,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
+          clipBehavior: Clip.hardEdge,
+          padding: const EdgeInsets.only(right: 2),
           itemCount: items.length,
           separatorBuilder: (context, index) => const SizedBox(width: 10),
           itemBuilder: (context, i) => SizedBox(
@@ -690,24 +690,13 @@ class _HomeQuickActions extends StatelessWidget {
       );
     }
 
-    if (isDesktop) {
-      return Row(
-        children: [
-          for (var i = 0; i < items.length; i++) ...[
-            if (i > 0) const SizedBox(width: 12),
-            Expanded(child: card(items[i])),
-          ],
-        ],
-      );
-    }
-
     return GridView.count(
-      crossAxisCount: 2,
+      crossAxisCount: gridCols,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       mainAxisSpacing: 12,
       crossAxisSpacing: 12,
-      childAspectRatio: 2.15,
+      childAspectRatio: gridCols >= 3 ? 2.35 : 2.15,
       children: items.map(card).toList(),
     );
   }
@@ -1141,7 +1130,7 @@ class _PatientHealthSection extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, c) {
-        final wide = c.maxWidth >= 720;
+        final wide = c.maxWidth >= 700;
         final grid = <Widget>[
           miniCard(
             icon: Icons.history_rounded,
@@ -1594,11 +1583,13 @@ class _MyDoctorsSection extends StatelessWidget {
         LayoutBuilder(
           builder: (context, c) {
             final w = c.maxWidth;
-            if (w < 560) {
+            if (w < 700) {
               return SizedBox(
                 height: 202,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
+                  clipBehavior: Clip.hardEdge,
+                  padding: const EdgeInsets.only(right: 2),
                   itemCount: entries.length,
                   separatorBuilder: (context, index) => const SizedBox(width: 10),
                   itemBuilder: (context, i) => SizedBox(
@@ -1685,7 +1676,7 @@ class _StaffPreviewSection extends ConsumerWidget {
     final cs = theme.colorScheme;
     final preview = doctors.length > 12 ? doctors.sublist(0, 12) : doctors;
     final sw = MediaQuery.sizeOf(context).width;
-    final bannerH = sw >= 900 ? 290.0 : (sw >= 600 ? 238.0 : 198.0);
+    final bannerH = sw >= 900 ? 290.0 : (sw >= 700 ? 238.0 : 198.0);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1790,6 +1781,8 @@ class _StaffPreviewSection extends ConsumerWidget {
           height: 234,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
+            clipBehavior: Clip.hardEdge,
+            padding: const EdgeInsets.only(right: 2),
             itemCount: preview.length,
             separatorBuilder: (context, i) => const SizedBox(width: 10),
             itemBuilder: (context, i) {
@@ -2121,7 +2114,7 @@ class _BranchesPreviewSection extends StatelessWidget {
         else
           LayoutBuilder(
             builder: (context, c) {
-              final cross = c.maxWidth >= 640 ? 2 : 1;
+              final cross = c.maxWidth >= 700 ? 2 : 1;
               final slice = branches.take(4).toList();
               return GridView.builder(
                 shrinkWrap: true,
