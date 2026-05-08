@@ -31,66 +31,6 @@ class _HomeLayout {
   }
 }
 
-class _HomePinnedNavDelegate extends SliverPersistentHeaderDelegate {
-  _HomePinnedNavDelegate({
-    required this.horizontalPadding,
-    required this.navBar,
-  });
-
-  final double horizontalPadding;
-  final Widget navBar;
-
-  static const double _extent = 78;
-
-  @override
-  double get minExtent => _extent;
-
-  @override
-  double get maxExtent => _extent;
-
-  @override
-  Widget build(
-    BuildContext context,
-    double shrinkOffset,
-    bool overlapsContent,
-  ) {
-    final surface = Theme.of(context).colorScheme.surface;
-    return Material(
-      color: surface.withValues(alpha: overlapsContent ? 0.96 : 0.86),
-      elevation: overlapsContent ? 1.5 : 0,
-      shadowColor: const Color(0x180F172A),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          border: overlapsContent
-              ? Border(
-                  bottom: BorderSide(
-                    color: const Color(0xFFE2E8F0).withValues(alpha: 0.95),
-                  ),
-                )
-              : null,
-        ),
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(horizontalPadding, 6, horizontalPadding, 6),
-          child: Align(
-            alignment: Alignment.center,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(
-                maxWidth: PatientDesktopContainer.maxWidth,
-              ),
-              child: navBar,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  @override
-  bool shouldRebuild(covariant _HomePinnedNavDelegate oldDelegate) =>
-      oldDelegate.horizontalPadding != horizontalPadding ||
-      oldDelegate.navBar != navBar;
-}
-
 String? _findDepartmentIdByKeywords(
   List<Map<String, dynamic>> departments,
   List<String> keywords,
@@ -473,13 +413,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       primary: true,
                       slivers: [
                         if (isDesktop)
-                          SliverPersistentHeader(
-                            pinned: true,
-                            delegate: _HomePinnedNavDelegate(
-                              horizontalPadding: padH,
-                              navBar: PatientDesktopNavBar(
-                                isAuthenticated: isAuthed,
-                                onScrollToDoctors: _scrollToDoctors,
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: EdgeInsets.fromLTRB(padH, 8, padH, 8),
+                              child: Center(
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: PatientDesktopContainer.maxWidth,
+                                  ),
+                                  child: PatientDesktopNavBar(
+                                    isAuthenticated: isAuthed,
+                                    onScrollToDoctors: _scrollToDoctors,
+                                  ),
+                                ),
                               ),
                             ),
                           ),

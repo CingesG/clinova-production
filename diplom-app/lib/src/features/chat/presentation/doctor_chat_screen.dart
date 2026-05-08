@@ -1986,7 +1986,7 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                             DropdownMenuItem<String>(
                               value: d['id'].toString(),
                               child: Text(
-                                _doctorDisplayName(d),
+                                '${_doctorDisplayName(d)} · ${_contactSubtitle(d, isDoctorRole, l10n.localeName)}',
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
@@ -2058,99 +2058,16 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
         builder: (context, constraints) {
           if (!constraints.hasBoundedWidth || constraints.maxWidth <= 0) {
             return const Center(
-              child: Text('Чат харагдахад асуудал гарлаа. Дахин оролдоно уу.'),
+              child: Text('Мэдээлэл ачааллаж байна...'),
             );
           }
-          final useDesktopRow = constraints.maxWidth > 900 && constraints.maxWidth.isFinite;
-          if (!useDesktopRow) return chatColumn(showDropdown: true);
-
-          return Align(
-            alignment: Alignment.topCenter,
+          final capped = constraints.maxWidth > 1000
+              ? 960.0
+              : constraints.maxWidth;
+          return Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1280),
-              child: Row(
-                children: [
-                  Container(
-                    width: 340,
-                    margin: const EdgeInsets.fromLTRB(12, 12, 8, 12),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.92),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                    ),
-                    child: Column(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.people_outline_rounded, size: 18),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  selectLabel,
-                                  style: theme.textTheme.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Divider(height: 1),
-                        Expanded(
-                          child: doctors.isEmpty
-                              ? const Center(child: Text('Эмчийн жагсаалт хоосон байна'))
-                              : ListView.separated(
-                                  padding: const EdgeInsets.all(8),
-                                  itemCount: doctors.length,
-                                  separatorBuilder: (_, _) => const SizedBox(height: 6),
-                                  itemBuilder: (context, i) {
-                                    final d = doctors[i];
-                                    final did = d['id']?.toString() ?? '';
-                                    final picked = (selectedId != null && selectedId.isNotEmpty) &&
-                                        selectedId == did;
-                                    return Material(
-                                      color: picked
-                                          ? cs.primary.withValues(alpha: 0.1)
-                                          : Colors.transparent,
-                                      borderRadius: BorderRadius.circular(12),
-                                      child: ListTile(
-                                        dense: true,
-                                        title: Text(
-                                          _doctorDisplayName(d),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        subtitle: Text(
-                                          _contactSubtitle(d, isDoctorRole, l10n.localeName),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        onTap: () {
-                                          setState(() => lockedOutDoctor = null);
-                                          _selectDoctor(d);
-                                        },
-                                      ),
-                                    );
-                                  },
-                                ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: Container(
-                      margin: const EdgeInsets.fromLTRB(8, 12, 12, 12),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: chatColumn(showDropdown: false),
-                    ),
-                  ),
-                ],
-              ),
+              constraints: BoxConstraints(maxWidth: capped),
+              child: chatColumn(showDropdown: true),
             ),
           );
         },
