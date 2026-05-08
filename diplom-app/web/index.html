@@ -52,6 +52,33 @@
 
   <link rel="manifest" href="manifest.json">
 
+  <!-- Emergency: wide desktop — constrain canvas so mobile/tablet layout stays visible (Flutter may ignore; Dart also clamps). -->
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      background: #f8fbff;
+      overflow-x: hidden;
+      overflow-y: auto;
+    }
+    /* Flutter web embed targets (varies by version) */
+    flutter-view, flt-glass-pane, #flt-glass-pane {
+      display: block;
+      visibility: visible;
+      min-height: 100vh;
+      box-sizing: border-box;
+    }
+    @media (min-width: 900px) {
+      flutter-view, flt-glass-pane, #flt-glass-pane {
+        max-width: 520px;
+        width: 100% !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+      }
+    }
+  </style>
+
   <script>
     window.deferredInstallPrompt = null;
     window.addEventListener('beforeinstallprompt', function (e) {

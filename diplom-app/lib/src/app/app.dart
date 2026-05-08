@@ -19,13 +19,38 @@ class ClinovaApp extends ConsumerWidget {
 
     return MaterialApp.router(
       builder: (context, child) {
+        final routed = child ?? const SizedBox.shrink();
+        // Web desktop: force narrow column so wide-viewport layout bugs cannot blank the UI.
+        final content = kIsWeb
+            ? LayoutBuilder(
+                builder: (context, constraints) {
+                  const breakpoint = 900.0;
+                  const maxW = 520.0;
+                  if (constraints.maxWidth <= breakpoint) {
+                    return routed;
+                  }
+                  final mq = MediaQuery.of(context);
+                  return Align(
+                    alignment: Alignment.topCenter,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: maxW),
+                      child: MediaQuery(
+                        data: mq.copyWith(size: Size(maxW, mq.size.height)),
+                        child: routed,
+                      ),
+                    ),
+                  );
+                },
+              )
+            : routed;
+
         return Stack(
           fit: StackFit.expand,
           clipBehavior: Clip.none,
           children: [
             Positioned.fill(
               child: RealtimeConnectionScope(
-                child: child ?? const SizedBox.shrink(),
+                child: content,
               ),
             ),
             if (kIsWeb)

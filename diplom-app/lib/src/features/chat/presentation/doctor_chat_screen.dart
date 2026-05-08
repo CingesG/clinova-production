@@ -2054,24 +2054,8 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
         ),
       );
     } else {
-      body = LayoutBuilder(
-        builder: (context, constraints) {
-          if (!constraints.hasBoundedWidth || constraints.maxWidth <= 0) {
-            return const Center(
-              child: Text('Мэдээлэл ачааллаж байна...'),
-            );
-          }
-          final capped = constraints.maxWidth > 1000
-              ? 960.0
-              : constraints.maxWidth;
-          return Center(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: capped),
-              child: chatColumn(showDropdown: true),
-            ),
-          );
-        },
-      );
+      // Root MaterialApp clamps web desktop width; use one safe column everywhere.
+      body = chatColumn(showDropdown: true);
     }
 
     return Scaffold(

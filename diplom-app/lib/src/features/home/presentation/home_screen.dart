@@ -1,4 +1,5 @@
 import 'package:diplom_app/l10n/app_localizations.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -245,7 +246,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final user = authState.user;
     final isAuthed = authState.isAuthenticated;
     final screenW = MediaQuery.sizeOf(context).width;
-    final isDesktop = PatientDesktopContainer.isDesktopWidth(screenW);
+    // Web: always use mobile/tablet home layout (desktop branch disabled for stability).
+    final isDesktop =
+        !kIsWeb && PatientDesktopContainer.isDesktopWidth(screenW);
     final showDockSpace = isAuthed && user?.role == 'PATIENT' && !isDesktop;
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
