@@ -16,6 +16,7 @@ import { RolesGuard } from '../common/roles.guard';
 
 import { ChatPatientContactsService } from './chat-patient-contacts.service';
 import { DoctorChatRequestService } from './doctor-chat-request.service';
+import { StartConversationDto } from './dto/start-conversation.dto';
 
 type PermissionFlagsDto = { doctorIds: string[] };
 
@@ -37,6 +38,16 @@ export class ChatAccessController {
   @Roles('PATIENT')
   patientAllowedDoctors(@CurrentUser() user: CurrentUserPayload) {
     return this.contacts.listAllowedDoctorsForPatient(user.sub);
+  }
+
+  @Post('conversations/start')
+  @UseGuards(RolesGuard)
+  @Roles('PATIENT')
+  startConversation(
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() body: StartConversationDto,
+  ) {
+    return this.contacts.startDoctorConversation(user.sub, body.doctorId.trim());
   }
 
   @Post('permission-flags')

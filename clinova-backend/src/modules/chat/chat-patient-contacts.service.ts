@@ -1,12 +1,20 @@
-import { Injectable, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
 import { AppointmentStatus, DoctorChatRequestStatus } from '@prisma/client';
 
 import { PrismaService } from '../common/prisma.service';
 import { USER_PUBLIC_SELECT } from '../common/user-public-select';
+import { CHAT_DM_FORBIDDEN_MN, ChatPermissionService } from './chat-permission.service';
 
 @Injectable()
 export class ChatPatientContactsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly chatPermission: ChatPermissionService,
+  ) {}
 
   private async requirePatientProfileId(patientUserId: string) {
     const patient = await this.prisma.patientProfile.findUnique({
@@ -177,5 +185,63 @@ export class ChatPatientContactsService {
         lastAppointmentStartsAt,
       };
     });
+  }
+
+  /**
+   * Find-or-create style: DM room id is deterministic per patient user + doctor profile.
+   * Caller must be allowed to chat (appointment or accepted chat request).
+   */
+  async startDoctorConversation(patientUserId: string, doctorProfileId: string) {
+    const doctorId = doctorProfileId.trim();
+    if (!doctorId) {
+      throw new BadRequestException('doctorId is required.');
+    }
+
+    const patientProfile = await this.prisma.patientProfile.findUnique({
+      where: { userId: patientUserId },
+      select: { id: true },
+    });
+    if (!patientProfile) {
+      throw new ForbiddenException(
+        'Patient profile is required for this action.',
+      );
+    }
+
+    const mayChat = await this.chatPermission.patientDoctorPairMayChat(
+      patientUserId,
+      doctorId,
+    );
+    if (!mayChat) {
+      throw new ForbiddenException(CHAT_DM_FORBIDDEN_MN);
+    }
+
+    const doctor = await this.prisma.doctorProfile.findUnique({
+      where: { id: doctorId },
+      select: {
+        id: true,
+        user: { select: USER_PUBLIC_SELECT },
+      },
+    });
+    if (!doctor) {
+      throw new BadRequestException('Doctor not found.');
+    }
+
+    const roomId = `room-${patientUserId}-doc-${doctorId}`;
+    const u = doctor.user;
+    const first = (u.firstName ?? '').trim();
+    const last = (u.lastName ?? '').trim();
+    const name = `${first} ${last}`.trim() || 'Doctor';
+
+    return {
+      id: roomId,
+      patientId: patientProfile.id,
+      doctorId: doctor.id,
+      doctor: {
+        id: doctor.id,
+        name,
+        avatarUrl: u.avatarUrl ?? null,
+        userId: u.id,
+      },
+    };
   }
 }

@@ -206,6 +206,17 @@ class ClinovaApi {
     return _normalizeTopLevelList(response.data);
   }
 
+  /// POST `/chat/conversations/start` — [doctorId] must be **DoctorProfile.id**, not User.id.
+  Future<Map<String, dynamic>> startDoctorConversation({
+    required String doctorId,
+  }) async {
+    final response = await _dio.post(
+      '/chat/conversations/start',
+      data: {'doctorId': doctorId},
+    );
+    return _asMap(response.data);
+  }
+
   Future<Map<String, Map<String, dynamic>>> getChatPermissionFlags({
     required List<String> doctorIds,
   }) async {

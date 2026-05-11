@@ -206,10 +206,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const AppointmentBookingLandingScreen(),
       ),
       GoRoute(
-        path: '/chat-landing',
-        builder: (context, state) => const DoctorChatLandingScreen(),
-      ),
-      GoRoute(
         path: '/doctor-profile/:doctorId',
         builder: (context, state) => DoctorPublicProfileScreen(
           doctorProfileId: state.pathParameters['doctorId']!,
@@ -221,6 +217,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/home',
             builder: (context, state) => const HomeScreen(),
+          ),
+          GoRoute(
+            path: '/chat-landing',
+            builder: (context, state) => const DoctorChatLandingScreen(),
           ),
           GoRoute(
             path: '/appointments',
@@ -244,8 +244,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/doctor-chat',
             builder: (context, state) {
-              final doctorId = state.uri.queryParameters['doctorId'];
-              return DoctorChatScreen(initialDoctorProfileId: doctorId);
+              final q = state.uri.queryParameters;
+              return DoctorChatScreen(
+                conversationId: q['conversationId'],
+                doctorId: q['doctorId'],
+                doctorName: q['doctorName'],
+                doctorAvatarUrl: q['doctorAvatar'],
+                doctorUserId: q['doctorUserId'],
+              );
             },
           ),
           GoRoute(

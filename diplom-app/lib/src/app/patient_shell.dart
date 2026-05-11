@@ -21,7 +21,9 @@ class PatientShell extends ConsumerWidget {
     if (path == '/appointments' || path.startsWith('/appointments/')) {
       return true;
     }
-    if (path == '/doctor-chat' || path.startsWith('/doctor-chat/')) {
+    if (path == '/chat-landing' ||
+        path == '/doctor-chat' ||
+        path.startsWith('/doctor-chat/')) {
       return true;
     }
     return false;
@@ -29,7 +31,9 @@ class PatientShell extends ConsumerWidget {
 
   static int _indexForPath(String path) {
     if (path.startsWith('/appointments')) return 1;
-    if (path.startsWith('/doctor-chat')) return 2;
+    if (path.startsWith('/chat-landing') || path.startsWith('/doctor-chat')) {
+      return 2;
+    }
     if (path.startsWith('/profile')) return 3;
     return 0;
   }
@@ -89,7 +93,7 @@ class PatientShell extends ConsumerWidget {
                     label: l10n.homeCardLiveChatTitle,
                     selected: idx == 2,
                     primary: primary,
-                    onTap: () => context.go('/doctor-chat'),
+                    onTap: () => context.go('/chat-landing'),
                   ),
                 ),
                 Expanded(

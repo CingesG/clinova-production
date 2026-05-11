@@ -7,6 +7,8 @@ import '../../../core/localization/context_l10n.dart';
 import '../../../core/media/doctor_avatar_mapper.dart';
 import '../../../core/navigation/go_router_pop.dart';
 import '../../../core/network/clinova_api.dart';
+import '../doctor_chat_route.dart';
+import '../services/doctor_chat_start_service.dart';
 import '../../../core/network/online_presence_provider.dart';
 import '../../../core/widgets/clinova_backdrop.dart';
 import '../../../core/widgets/clinova_circle_avatar.dart';
@@ -26,6 +28,7 @@ class _DoctorChatLandingScreenState
     extends ConsumerState<DoctorChatLandingScreen> {
   late Future<List<Map<String, dynamic>>> _doctorsFuture;
   var _futureReady = false;
+  final GlobalKey _doctorDirectoryKey = GlobalKey();
 
   @override
   void didChangeDependencies() {
@@ -108,6 +111,7 @@ class _DoctorChatLandingScreenState
                                   doctors: doctors,
                                   onlineIds: onlineIds,
                                   loading: loading,
+                                  doctorDirectoryKey: _doctorDirectoryKey,
                                 ),
                               ),
                             ],
@@ -135,6 +139,7 @@ class _DoctorChatLandingScreenState
                               doctors: doctors,
                               onlineIds: onlineIds,
                               loading: loading,
+                              doctorDirectoryKey: _doctorDirectoryKey,
                             ),
                           ],
                         );
@@ -438,7 +443,7 @@ class _BenefitTile extends StatelessWidget {
   }
 }
 
-class _LandingRightPanel extends StatelessWidget {
+class _LandingRightPanel extends ConsumerWidget {
   const _LandingRightPanel({
     required this.l10n,
     required this.theme,
@@ -447,6 +452,7 @@ class _LandingRightPanel extends StatelessWidget {
     required this.doctors,
     required this.onlineIds,
     required this.loading,
+    required this.doctorDirectoryKey,
   });
 
   final AppLocalizations l10n;
@@ -456,9 +462,10 @@ class _LandingRightPanel extends StatelessWidget {
   final List<Map<String, dynamic>> doctors;
   final Set<String> onlineIds;
   final bool loading;
+  final GlobalKey doctorDirectoryKey;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final isMn = l10n.localeName.toLowerCase().startsWith('mn');
     final preview = doctors.length > 9 ? doctors.sublist(0, 9) : doctors;
 
@@ -515,10 +522,28 @@ class _LandingRightPanel extends StatelessWidget {
                     ),
                   ),
                   onPressed: () {
-                    if (auth.isAuthenticated) {
-                      context.push('/doctor-chat');
-                    } else {
+                    if (!auth.isAuthenticated) {
                       context.push('/auth/login');
+                      return;
+                    }
+                    final anchor = doctorDirectoryKey.currentContext;
+                    if (anchor != null) {
+                      Scrollable.ensureVisible(
+                        anchor,
+                        duration: const Duration(milliseconds: 450),
+                        curve: Curves.easeOutCubic,
+                        alignment: 0.1,
+                      );
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            isMn
+                                ? 'Доорх жагсаалтаас эмчээ сонгоно уу.'
+                                : 'Pick a doctor from the list below.',
+                          ),
+                        ),
+                      );
                     }
                   },
                   child: Text(
@@ -532,194 +557,256 @@ class _LandingRightPanel extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 14),
-        Text(
-          isMn ? 'Боломжит эмч нар' : 'Available doctors',
-          style: theme.textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w800,
-            color: const Color(0xFF102A43),
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          isMn
-              ? 'Онлайн төлөв нь хуудас ачаалах үеийнхтэй синхронлогдоно.'
-              : 'Online status syncs with the realtime service.',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: 12),
-        if (loading)
-          const Center(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: CircularProgressIndicator(),
+        Column(
+          key: doctorDirectoryKey,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              isMn ? 'Боломжит эмч нар' : 'Available doctors',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: const Color(0xFF102A43),
+              ),
             ),
-          )
-        else if (preview.isEmpty)
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.88),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-            ),
-            child: Text(
-              l10n.homeStaffEmpty,
+            const SizedBox(height: 4),
+            Text(
+              isMn
+                  ? 'Онлайн төлөв нь хуудас ачаалах үеийнхтэй синхронлогдоно.'
+                  : 'Online status syncs with the realtime service.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
-          )
-        else
-          LayoutBuilder(
-            builder: (context, c) {
-              var cross = 1;
-              if (c.maxWidth >= 520) cross = 2;
-              if (c.maxWidth >= 720) cross = 3;
-              return GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: cross,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  mainAxisExtent: 132,
+            const SizedBox(height: 12),
+            if (loading)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: CircularProgressIndicator(),
                 ),
-                itemCount: preview.length,
-                itemBuilder: (context, i) {
-                  final d = preview[i];
-                  final id = d['id']?.toString() ?? '';
-                  final u = d['user'];
-                  final um = u is Map<String, dynamic> ? u : null;
-                  final name = um == null
-                      ? l10n.homeFallbackDoctor
-                      : '${um['firstName'] ?? ''} ${um['lastName'] ?? ''}'
-                          .trim();
-                  final display = name.isEmpty ? l10n.homeFallbackDoctor : name;
-                  final initial = display.isNotEmpty
-                      ? String.fromCharCode(display.runes.first).toUpperCase()
-                      : '?';
-                  final dept =
-                      d['department']?['name']?.toString() ?? '';
-                  final uid = um?['id']?.toString();
-                  final online = uid != null && onlineIds.contains(uid);
-                  final rating = d['avgRating'] ?? d['rating'];
-                  final stars = rating is num ? rating.toStringAsFixed(1) : null;
+              )
+            else if (preview.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.88),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Text(
+                  l10n.homeStaffEmpty,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              )
+            else
+              LayoutBuilder(
+                builder: (context, c) {
+                  var cross = 1;
+                  if (c.maxWidth >= 520) cross = 2;
+                  if (c.maxWidth >= 720) cross = 3;
+                  return GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: cross,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                      mainAxisExtent: 132,
+                    ),
+                    itemCount: preview.length,
+                    itemBuilder: (context, i) {
+                      final d = preview[i];
+                      final id = d['id']?.toString() ?? '';
+                      final u = d['user'];
+                      final um = u is Map<String, dynamic> ? u : null;
+                      final name = um == null
+                          ? l10n.homeFallbackDoctor
+                          : '${um['firstName'] ?? ''} ${um['lastName'] ?? ''}'
+                              .trim();
+                      final display =
+                          name.isEmpty ? l10n.homeFallbackDoctor : name;
+                      final initial = display.isNotEmpty
+                          ? String.fromCharCode(display.runes.first).toUpperCase()
+                          : '?';
+                      final dept =
+                          d['department']?['name']?.toString() ?? '';
+                      final uid = um?['id']?.toString();
+                      final online = uid != null && onlineIds.contains(uid);
+                      final rating = d['avgRating'] ?? d['rating'];
+                      final stars =
+                          rating is num ? rating.toStringAsFixed(1) : null;
 
-                  return Material(
-                    color: Colors.white.withValues(alpha: 0.92),
-                    borderRadius: BorderRadius.circular(16),
-                    clipBehavior: Clip.antiAlias,
-                    child: InkWell(
-                      onTap: id.isEmpty
-                          ? null
-                          : () => context.push(
-                                '/doctor-chat?doctorId=${Uri.encodeComponent(id)}',
-                              ),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(10, 10, 8, 8),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
+                      return Material(
+                        color: Colors.white.withValues(alpha: 0.92),
+                        borderRadius: BorderRadius.circular(16),
+                        clipBehavior: Clip.antiAlias,
+                        child: InkWell(
+                          onTap: id.isEmpty
+                              ? null
+                              : () async {
+                                  if (!auth.isAuthenticated) {
+                                    await context.push('/auth/login');
+                                    return;
+                                  }
+                                  try {
+                                    final flags = await ref
+                                        .read(clinovaApiProvider)
+                                        .getChatPermissionFlags(doctorIds: [id]);
+                                    final pf = flags[id];
+                                    final canChat = pf?['canChat'] == true;
+                                    final pending = pf?['pendingRequest'] == true;
+                                    if (!canChat) {
+                                      if (!context.mounted) return;
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            pending
+                                                ? 'Таны чат хүсэлт хүлээгдэж байна.'
+                                                : 'Энэ эмчтэй чат эхлүүлэхийн тулд эхлээд цаг авах эсвэл чат зөвшөөрөл хэрэгтэй.',
+                                          ),
+                                        ),
+                                      );
+                                      return;
+                                    }
+                                    final res = await ref
+                                        .read(doctorChatStartServiceProvider)
+                                        .startDoctorChat(id);
+                                    final path =
+                                        doctorChatDetailLocationFromStartResponse(
+                                      res,
+                                    );
+                                    if (!context.mounted) return;
+                                    context.push(path);
+                                  } on FormatException {
+                                    if (!context.mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Чат эхлүүлэхэд алдаа гарлаа. Дахин оролдоно уу.',
+                                        ),
+                                      ),
+                                    );
+                                  } catch (e) {
+                                    if (!context.mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          DoctorChatStartService
+                                              .userMessageForStartFailure(e),
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                },
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(10, 10, 8, 8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Stack(
-                                  clipBehavior: Clip.none,
+                                Row(
                                   children: [
-                                    ClinovaCircleAvatar(
-                                      radius: 22,
-                                      initialsText: initial,
-                                      backgroundColor:
-                                          kClinovaFlatDoctorAvatarBackground,
-                                      foregroundColor: const Color(0xFF475569),
-                                      doctorUseFlatAssetOnly: true,
-                                      doctorDisplayName: display,
-                                      doctorGender: doctorGenderFromMap(um),
-                                    ),
-                                    if (online)
-                                      Positioned(
-                                        right: -1,
-                                        bottom: -1,
-                                        child: Container(
-                                          width: 11,
-                                          height: 11,
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFF22C55E),
-                                            shape: BoxShape.circle,
-                                            border: Border.all(
-                                              color: Colors.white,
-                                              width: 2,
+                                    Stack(
+                                      clipBehavior: Clip.none,
+                                      children: [
+                                        ClinovaCircleAvatar(
+                                          radius: 22,
+                                          initialsText: initial,
+                                          backgroundColor:
+                                              kClinovaFlatDoctorAvatarBackground,
+                                          foregroundColor:
+                                              const Color(0xFF475569),
+                                          doctorUseFlatAssetOnly: true,
+                                          doctorDisplayName: display,
+                                          doctorGender: doctorGenderFromMap(um),
+                                        ),
+                                        if (online)
+                                          Positioned(
+                                            right: -1,
+                                            bottom: -1,
+                                            child: Container(
+                                              width: 11,
+                                              height: 11,
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFF22C55E),
+                                                shape: BoxShape.circle,
+                                                border: Border.all(
+                                                  color: Colors.white,
+                                                  width: 2,
+                                                ),
+                                              ),
                                             ),
                                           ),
-                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            display,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: theme.textTheme.labelLarge
+                                                ?.copyWith(
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                          if (dept.isNotEmpty)
+                                            Text(
+                                              dept,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: theme.textTheme.labelSmall
+                                                  ?.copyWith(
+                                                color: theme.colorScheme
+                                                    .onSurfaceVariant,
+                                              ),
+                                            ),
+                                        ],
                                       ),
+                                    ),
                                   ],
                                 ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
+                                const Spacer(),
+                                Row(
+                                  children: [
+                                    if (stars != null)
                                       Text(
-                                        display,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: theme.textTheme.labelLarge
+                                        '★ $stars',
+                                        style: theme.textTheme.labelSmall
                                             ?.copyWith(
-                                          fontWeight: FontWeight.w800,
+                                          fontWeight: FontWeight.w700,
+                                          color: const Color(0xFFF59E0B),
                                         ),
                                       ),
-                                      if (dept.isNotEmpty)
-                                        Text(
-                                          dept,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: theme.textTheme.labelSmall
-                                              ?.copyWith(
-                                            color: theme
-                                                .colorScheme.onSurfaceVariant,
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const Spacer(),
-                            Row(
-                              children: [
-                                if (stars != null)
-                                  Text(
-                                    '★ $stars',
-                                    style: theme.textTheme.labelSmall?.copyWith(
-                                      fontWeight: FontWeight.w700,
-                                      color: const Color(0xFFF59E0B),
+                                    const Spacer(),
+                                    Icon(
+                                      Icons.chat_bubble_outline_rounded,
+                                      size: 18,
+                                      color: primary,
                                     ),
-                                  ),
-                                const Spacer(),
-                                Icon(
-                                  Icons.chat_bubble_outline_rounded,
-                                  size: 18,
-                                  color: primary,
+                                  ],
                                 ),
                               ],
                             ),
-                          ],
+                          ),
                         ),
-                      ),
-                    ),
+                      );
+                    },
                   );
                 },
-              );
-            },
-          ),
+              ),
+          ],
+        ),
         if (auth.isAuthenticated)
           Padding(
             padding: const EdgeInsets.only(top: 12),
             child: TextButton(
-              onPressed: () => context.push('/doctor-chat'),
+              onPressed: () => context.go('/home'),
               child: Text(l10n.chatLandingViewOnline),
             ),
           ),

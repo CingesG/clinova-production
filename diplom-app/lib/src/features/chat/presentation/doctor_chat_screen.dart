@@ -29,15 +29,39 @@ import '../../../core/network/online_presence_provider.dart';
 import '../../../core/widgets/clinova_backdrop.dart';
 import '../../../core/widgets/clinova_circle_avatar.dart';
 import '../../auth/application/auth_controller.dart';
+import '../doctor_chat_route.dart';
+import '../services/doctor_chat_start_service.dart';
 import '../services/chat_attachment_download.dart';
 import '../services/clinova_rtc_call_session.dart';
 import 'doctor_chat_pick_raw.dart';
 
 class DoctorChatScreen extends ConsumerStatefulWidget {
-  const DoctorChatScreen({super.key, this.initialDoctorProfileId});
+  const DoctorChatScreen({
+    super.key,
+    this.conversationId,
+    this.doctorId,
+    this.doctorName,
+    this.doctorAvatarUrl,
+    this.doctorUserId,
+    this.initialDoctorProfileId,
+  });
 
-  /// Doctor profile id (`DoctorProfile.id`) from deep link / AI triage.
+  /// Persisted DM room id (`room-{patientUserId}-doc-{doctorProfileId}`).
+  final String? conversationId;
+
+  /// Doctor profile id (`DoctorProfile.id`).
+  final String? doctorId;
+
+  /// Display hints when opening from [startDoctorConversation] before doctor list loads.
+  final String? doctorName;
+  final String? doctorAvatarUrl;
+  final String? doctorUserId;
+
+  /// Legacy query param; treated like [doctorId].
   final String? initialDoctorProfileId;
+
+  String? get effectiveDoctorProfileId =>
+      (doctorId ?? initialDoctorProfileId)?.trim();
 
   @override
   ConsumerState<DoctorChatScreen> createState() => _DoctorChatScreenState();
@@ -68,6 +92,7 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
   String? typingUserId;
   ClinovaRtcCallSession? _rtcSession;
   bool _attachmentBusy = false;
+  bool _didUpgradeLegacyDoctorLink = false;
   AudioRecorder? _voiceRecorder;
   Completer<void>? _voiceFingerRelease;
   bool _recordingVoiceHud = false;
@@ -491,7 +516,8 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
 
       if (!mounted) return;
 
-      final presetId = widget.initialDoctorProfileId?.trim();
+      final presetRoom = widget.conversationId?.trim();
+      final presetId = widget.effectiveDoctorProfileId?.trim();
       Map<String, dynamic>? presetDoctor;
       Map<String, dynamic>? lockedDoc;
       if (presetId != null && presetId.isNotEmpty) {
@@ -531,6 +557,67 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
       }
 
       final patientId = _patientUserId;
+
+      if (lockedDoc != null && presetDoctor == null) {
+        setState(() {
+          selectedDoctor = null;
+          activeRoomId = '';
+          messages.clear();
+        });
+        return;
+      }
+
+      if (authedPatient &&
+          patientId != null &&
+          presetRoom != null &&
+          presetRoom.isNotEmpty &&
+          presetId != null &&
+          presetId.isNotEmpty) {
+        final seed = presetDoctor ??
+            _syntheticDoctorFromHints(
+              doctorProfileId: presetId,
+              displayName: widget.doctorName,
+              avatarUrl: widget.doctorAvatarUrl,
+              doctorUserId: widget.doctorUserId,
+            );
+        final merged = [...list];
+        final hasSeed = merged.any((d) => d['id']?.toString() == presetId);
+        if (!hasSeed) merged.insert(0, seed);
+        setState(() => doctors = merged);
+        await _selectDoctor(seed, fixedRoomId: presetRoom);
+        if (mounted) await _tryFlushInboundAfterDoctorsLoaded();
+        return;
+      }
+
+      if (authedPatient &&
+          patientId != null &&
+          (presetRoom == null || presetRoom.isEmpty) &&
+          presetId != null &&
+          presetId.isNotEmpty &&
+          !_didUpgradeLegacyDoctorLink) {
+        try {
+          final started = await ref
+              .read(doctorChatStartServiceProvider)
+              .startDoctorChat(presetId);
+          final room = started['id']?.toString() ?? '';
+          if (room.isNotEmpty && mounted) {
+            _didUpgradeLegacyDoctorLink = true;
+            context.go(doctorChatDetailLocationFromStartResponse(started));
+            return;
+          }
+        } catch (e) {
+          if (!mounted) return;
+          setState(() {
+            loadError = DoctorChatStartService.userMessageForStartFailure(e);
+          });
+          return;
+        }
+      }
+
+      final shouldAutoPickFirst = isDoctorRole ||
+          (presetId != null && presetId.isNotEmpty) ||
+          (presetRoom != null && presetRoom.isNotEmpty);
+
       final pick = presetDoctor ?? (list.isNotEmpty ? list.first : null);
 
       if (lockedDoc != null && pick == null) {
@@ -544,7 +631,15 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
 
       if (pick != null) {
         if (patientId != null) {
-          await _selectDoctor(pick);
+          if (shouldAutoPickFirst) {
+            await _selectDoctor(pick);
+          } else {
+            setState(() {
+              selectedDoctor = null;
+              activeRoomId = '';
+              messages.clear();
+            });
+          }
         } else {
           setState(() {
             selectedDoctor = pick;
@@ -700,7 +795,29 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
     );
   }
 
-  Future<void> _selectDoctor(Map<String, dynamic> doctor) async {
+  Map<String, dynamic> _syntheticDoctorFromHints({
+    required String doctorProfileId,
+    String? displayName,
+    String? avatarUrl,
+    String? doctorUserId,
+  }) {
+    final name = displayName?.trim() ?? '';
+    return {
+      'id': doctorProfileId,
+      'name': name,
+      'user': {
+        'id': doctorUserId?.trim() ?? '',
+        'firstName': '',
+        'lastName': '',
+        'avatarUrl': avatarUrl?.trim() ?? '',
+      },
+    };
+  }
+
+  Future<void> _selectDoctor(
+    Map<String, dynamic> doctor, {
+    String? fixedRoomId,
+  }) async {
     final user = ref.read(authControllerProvider).user;
     final role = user?.role ?? 'PATIENT';
     final isDoctorRole = role == 'DOCTOR';
@@ -714,25 +831,27 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
       return;
     }
 
-    String room = '';
-    if (isDoctorRole) {
-      final myDoctorProfileId = user?.doctorProfileId?.trim() ?? '';
-      final patientUserId =
-          doctor['patientUserId']?.toString().trim() ??
-          _doctorUserId(doctor)?.trim() ??
-          '';
-      if (myDoctorProfileId.isEmpty || patientUserId.isEmpty) return;
-      room = _roomForPatientAndDoctor(
-        patientUserId: patientUserId,
-        doctorProfileId: myDoctorProfileId,
-      );
-    } else {
-      final docProfileId = doctor['id']?.toString().trim() ?? '';
-      if (docProfileId.isEmpty) return;
-      room = _roomForPatientAndDoctor(
-        patientUserId: myUserId,
-        doctorProfileId: docProfileId,
-      );
+    String room = fixedRoomId?.trim() ?? '';
+    if (room.isEmpty) {
+      if (isDoctorRole) {
+        final myDoctorProfileId = user?.doctorProfileId?.trim() ?? '';
+        final patientUserId =
+            doctor['patientUserId']?.toString().trim() ??
+            _doctorUserId(doctor)?.trim() ??
+            '';
+        if (myDoctorProfileId.isEmpty || patientUserId.isEmpty) return;
+        room = _roomForPatientAndDoctor(
+          patientUserId: patientUserId,
+          doctorProfileId: myDoctorProfileId,
+        );
+      } else {
+        final docProfileId = doctor['id']?.toString().trim() ?? '';
+        if (docProfileId.isEmpty) return;
+        room = _roomForPatientAndDoctor(
+          patientUserId: myUserId,
+          doctorProfileId: docProfileId,
+        );
+      }
     }
 
     await _resetRtcSession();
@@ -2113,6 +2232,55 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(noDoctorsLabel, textAlign: TextAlign.center),
+        ),
+      );
+    } else if (!isDoctorRole &&
+        isAuthed &&
+        (widget.conversationId ?? '').trim().isEmpty &&
+        (widget.effectiveDoctorProfileId ?? '').trim().isEmpty &&
+        lockedOutDoctor == null &&
+        doctors.isNotEmpty &&
+        selectedDoctor == null &&
+        activeRoomId.isEmpty) {
+      body = Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.chat_bubble_outline_rounded,
+                  size: 48,
+                  color: cs.primary.withValues(alpha: 0.85),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Эмч болон чатны холбоос сонгогдоогүй байна.',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Эмчтэй чатлахын тулд "Эмчтэй чат" цэсээс эхлэн эмчээ сонгоно уу, эсвэл нүүр хуудаснаас шууд чат эхлүүлнэ үү.',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: cs.onSurfaceVariant,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 22),
+                FilledButton.icon(
+                  onPressed: () => context.go('/chat-landing'),
+                  icon: const Icon(Icons.groups_rounded),
+                  label: const Text('Эмчтэй чат хэсэг рүү орох'),
+                ),
+              ],
+            ),
+          ),
         ),
       );
     } else {

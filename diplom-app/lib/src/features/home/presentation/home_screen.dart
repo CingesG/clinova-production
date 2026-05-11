@@ -1,4 +1,5 @@
 import 'package:diplom_app/l10n/app_localizations.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -12,6 +13,8 @@ import '../../../core/widgets/clinova_backdrop.dart';
 import '../../../core/widgets/clinova_circle_avatar.dart';
 import '../../../core/widgets/clinova_logo.dart';
 import '../../auth/application/auth_controller.dart';
+import '../../chat/doctor_chat_route.dart';
+import '../../chat/services/doctor_chat_start_service.dart';
 import 'patient_desktop_nav_bar.dart';
 
 /// Shared layout rhythm for the patient home dashboard (centered ~1360).
@@ -77,6 +80,9 @@ Future<void> _homeOpenDoctorChatFlow(
   required String doctorId,
   required bool patientAuthed,
   required Map<String, Map<String, dynamic>> chatPermissionByDoctor,
+  /// Нүүр дээрх «Эмчтэй чат эхлүүлэх» — зөвшөөрөлгүй үед dialog биш snackbar.
+  bool mainStartChatCta = false,
+  Map<String, dynamic>? doctorDebugRow,
 }) async {
   if (doctorId.isEmpty) return;
   if (!patientAuthed) {
@@ -88,9 +94,42 @@ Future<void> _homeOpenDoctorChatFlow(
   final pending = f?['pendingRequest'] == true;
   if (canChat) {
     if (context.mounted) {
-      context.push(
-        '/doctor-chat?doctorId=${Uri.encodeComponent(doctorId)}',
-      );
+      try {
+        if (kDebugMode && doctorDebugRow != null) {
+          final u = doctorDebugRow['user'];
+          final um = u is Map<String, dynamic> ? u : null;
+          debugPrint(
+            '[Home][StartChat] doctorProfile.id=${doctorDebugRow['id']} '
+            'doctorUser.id=${um?['id']} name=${_userFullName(um)} → POST doctorId=$doctorId',
+          );
+        }
+        final res = await ref
+            .read(doctorChatStartServiceProvider)
+            .startDoctorChat(doctorId);
+        final path = doctorChatDetailLocationFromStartResponse(res);
+        if (context.mounted) {
+          context.push(path);
+        }
+      } on FormatException catch (e) {
+        if (kDebugMode) {
+          debugPrint('[Home][StartChat] bad API response: $e');
+        }
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Чат эхлүүлэхэд алдаа гарлаа. Дахин оролдоно уу.'),
+            ),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(DoctorChatStartService.userMessageForStartFailure(e)),
+            ),
+          );
+        }
+      }
     }
     return;
   }
@@ -99,6 +138,18 @@ Future<void> _homeOpenDoctorChatFlow(
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Таны чат хүсэлт хүлээгдэж байна.'),
+        ),
+      );
+    }
+    return;
+  }
+  if (mainStartChatCta) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Энэ эмчтэй чат эхлүүлэхийн тулд эхлээд цаг авах эсвэл чат зөвшөөрөл хэрэгтэй.',
+          ),
         ),
       );
     }
@@ -1624,7 +1675,7 @@ class _MyDoctorsSection extends StatelessWidget {
   }
 }
 
-class _StaffPreviewSection extends ConsumerWidget {
+class _StaffPreviewSection extends ConsumerStatefulWidget {
   const _StaffPreviewSection({
     super.key,
     required this.l10n,
@@ -1645,7 +1696,23 @@ class _StaffPreviewSection extends ConsumerWidget {
   final Map<String, Map<String, dynamic>> chatPermissionByDoctor;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_StaffPreviewSection> createState() =>
+      _StaffPreviewSectionState();
+}
+
+class _StaffPreviewSectionState extends ConsumerState<_StaffPreviewSection> {
+  String? _selectedDoctorId;
+  bool _startChatBusy = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = widget.l10n;
+    final theme = widget.theme;
+    final doctors = widget.doctors;
+    final onlineUserIds = widget.onlineUserIds;
+    final todayDoctorIds = widget.todayDoctorIds;
+    final patientAuthed = widget.patientAuthed;
+    final chatPermissionByDoctor = widget.chatPermissionByDoctor;
     if (doctors.isEmpty) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1817,14 +1884,31 @@ class _StaffPreviewSection extends ConsumerWidget {
                       : pendingReq
                           ? 'Хүлээгдэж'
                           : 'Чат хүсэлт';
-              return Container(
+              final selected = docId.isNotEmpty && _selectedDoctorId == docId;
+              const primarySel = Color(0xFF1769FF);
+              return Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(18),
+                  onTap: docId.isEmpty
+                      ? null
+                      : () {
+                          setState(() {
+                            _selectedDoctorId =
+                                selected ? null : docId;
+                          });
+                        },
+                  child: Container(
                     width: 206,
                     padding: const EdgeInsets.fromLTRB(12, 11, 10, 10),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.92),
+                      color: selected
+                          ? const Color(0xFFEFF6FF)
+                          : Colors.white.withValues(alpha: 0.92),
                       borderRadius: BorderRadius.circular(18),
                       border: Border.all(
-                        color: const Color(0xFFE2E8F0),
+                        color: selected ? primarySel : const Color(0xFFE2E8F0),
+                        width: selected ? 2 : 1,
                       ),
                       boxShadow: const [
                         BoxShadow(
@@ -1834,7 +1918,10 @@ class _StaffPreviewSection extends ConsumerWidget {
                         ),
                       ],
                     ),
-                    child: Column(
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Row(
@@ -1986,38 +2073,113 @@ class _StaffPreviewSection extends ConsumerWidget {
                                 style: TextStyle(fontSize: 11),
                               ),
                             ),
-                            FilledButton.tonal(
-                              style: FilledButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 6,
+                            if (!patientAuthed || !canChat)
+                              FilledButton.tonal(
+                                style: FilledButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 6,
+                                  ),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
                                 ),
-                                minimumSize: Size.zero,
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                onPressed: docId.isEmpty
+                                    ? null
+                                    : () => _homeOpenDoctorChatFlow(
+                                          context,
+                                          ref,
+                                          doctorId: docId,
+                                          patientAuthed: patientAuthed,
+                                          chatPermissionByDoctor:
+                                              chatPermissionByDoctor,
+                                          doctorDebugRow: d,
+                                        ),
+                                child: Text(
+                                  chatLabel,
+                                  style: const TextStyle(fontSize: 11),
+                                ),
                               ),
-                              onPressed: docId.isEmpty
-                                  ? null
-                                  : () => _homeOpenDoctorChatFlow(
-                                        context,
-                                        ref,
-                                        doctorId: docId,
-                                        patientAuthed: patientAuthed,
-                                        chatPermissionByDoctor:
-                                            chatPermissionByDoctor,
-                                      ),
-                              child: Text(
-                                chatLabel,
-                                style: const TextStyle(fontSize: 11),
-                              ),
-                            ),
                           ],
                         ),
                       ],
                     ),
-                  );
+                        Positioned(
+                          right: 2,
+                          bottom: 2,
+                          child: Icon(
+                            selected
+                                ? Icons.check_circle_rounded
+                                : Icons.circle_outlined,
+                            size: 22,
+                            color: selected
+                                ? primarySel
+                                : const Color(0xFF94A3B8),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
             },
           ),
         ),
+        if (patientAuthed) ...[
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              onPressed: _startChatBusy
+                  ? null
+                  : () async {
+                      if (_selectedDoctorId == null ||
+                          _selectedDoctorId!.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Эхлээд чатлах эмчээ сонгоно уу'),
+                          ),
+                        );
+                        return;
+                      }
+                      setState(() => _startChatBusy = true);
+                      try {
+                        Map<String, dynamic>? debugRow;
+                        for (final x in doctors) {
+                          if (x['id']?.toString() == _selectedDoctorId) {
+                            debugRow = x;
+                            break;
+                          }
+                        }
+                        await _homeOpenDoctorChatFlow(
+                          context,
+                          ref,
+                          doctorId: _selectedDoctorId!,
+                          patientAuthed: patientAuthed,
+                          chatPermissionByDoctor: chatPermissionByDoctor,
+                          mainStartChatCta: true,
+                          doctorDebugRow: debugRow,
+                        );
+                      } finally {
+                        if (context.mounted) {
+                          setState(() => _startChatBusy = false);
+                        }
+                      }
+                    },
+              icon: _startChatBusy
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.chat_bubble_rounded),
+              label: Text(l10n.chatLandingStart),
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -2273,7 +2435,7 @@ class _HomeDrawer extends StatelessWidget {
               subtitle: Text(l10n.homeCardLiveChatSubtitle),
               onTap: () {
                 Navigator.pop(context);
-                context.push('/doctor-chat');
+                context.push('/chat-landing');
               },
             ),
             ListTile(

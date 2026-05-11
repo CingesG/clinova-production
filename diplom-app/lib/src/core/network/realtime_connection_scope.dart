@@ -147,7 +147,13 @@ class _RealtimeConnectionScopeState
       return;
     }
     router.go(
-      '/doctor-chat?doctorId=${Uri.encodeComponent(parsed.doctorProfileId)}',
+      Uri(
+        path: '/doctor-chat',
+        queryParameters: {
+          'conversationId': roomId,
+          'doctorId': parsed.doctorProfileId,
+        },
+      ).toString(),
     );
   }
 
