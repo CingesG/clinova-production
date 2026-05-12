@@ -7,6 +7,7 @@ import '../../../core/formatting/contact_display.dart';
 import '../../../core/localization/context_l10n.dart';
 import '../../../core/network/clinova_api.dart';
 import '../../../core/widgets/clinova_backdrop.dart';
+import '../../../core/widgets/clinova_premium_drawer.dart';
 import '../../../core/widgets/premium_healthcare_shell.dart';
 import '../../auth/application/auth_controller.dart';
 
@@ -44,14 +45,16 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
     if (_busyAppointmentIds.contains(appointmentId)) return;
     setState(() => _busyAppointmentIds.add(appointmentId));
     try {
-      await ref.read(clinovaApiProvider).updateAppointmentStatus(
+      await ref
+          .read(clinovaApiProvider)
+          .updateAppointmentStatus(
             appointmentId: appointmentId,
             status: status,
           );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(successMessage)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(successMessage)));
       await _refresh();
     } catch (e) {
       if (!mounted) return;
@@ -126,13 +129,14 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Өвчтөн: ${user['firstName'] ?? ''} ${user['lastName'] ?? ''}'.trim()),
+            Text(
+              'Өвчтөн: ${user['firstName'] ?? ''} ${user['lastName'] ?? ''}'
+                  .trim(),
+            ),
             const SizedBox(height: 6),
             Text('Имэйл: ${user['email'] ?? '—'}'),
             const SizedBox(height: 6),
-            Text(
-              'Өвчтөний утас: ${displayMnRegisteredPhone(userMap)}',
-            ),
+            Text('Өвчтөний утас: ${displayMnRegisteredPhone(userMap)}'),
             const SizedBox(height: 6),
             Text('Үйлчилгээ: ${service['name'] ?? '—'}'),
             const SizedBox(height: 6),
@@ -154,77 +158,7 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
   }
 
   Widget _buildMobileDrawer() {
-    return Drawer(
-      child: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 18),
-          children: [
-            const ListTile(
-              title: Text(
-                'Эмчийн цэс',
-                style: TextStyle(fontWeight: FontWeight.w800),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.refresh_rounded),
-              title: const Text('Дахин ачаалах'),
-              onTap: () async {
-                Navigator.of(context).pop();
-                await _refresh();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.chat_bubble_rounded),
-              title: const Text('Өвчтөнтэй чатлах'),
-              onTap: () {
-                Navigator.of(context).pop();
-                context.go('/doctor-chat');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.schedule_rounded),
-              title: const Text('Миний цагийн хуваарь'),
-              onTap: () {
-                Navigator.of(context).pop();
-                context.go('/doctor/schedule');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.person_rounded),
-              title: const Text('Профайл'),
-              onTap: () {
-                Navigator.of(context).pop();
-                context.go('/profile');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.note_alt_rounded),
-              title: const Text('Үзлэгийн тэмдэглэл'),
-              onTap: () {
-                Navigator.of(context).pop();
-                context.go('/doctor/notes');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.tune_rounded),
-              title: Text(context.l10n.settings),
-              onTap: () {
-                Navigator.of(context).pop();
-                context.go('/settings');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.logout_rounded),
-              title: const Text('Гарах'),
-              onTap: () {
-                Navigator.of(context).pop();
-                ref.read(authControllerProvider.notifier).logout();
-              },
-            ),
-          ],
-        ),
-      ),
-    );
+    return ClinovaDoctorPremiumDrawer(onReload: _refresh);
   }
 
   @override
@@ -234,8 +168,7 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
     final welcomeName = user?.displayName ?? l10n.doctorRoleFallback;
     final nowLabel = DateFormat('yyyy-MM-dd').format(DateTime.now());
     final isMobile = MediaQuery.of(context).size.width < 760;
-    void onLogout() =>
-        ref.read(authControllerProvider.notifier).logout();
+    void onLogout() => ref.read(authControllerProvider.notifier).logout();
 
     return Scaffold(
       key: _scaffoldKey,
@@ -338,19 +271,19 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
                           final crossAxisCount = width >= 1100
                               ? 3
                               : width >= 720
-                                  ? 2
-                                  : 1;
+                              ? 2
+                              : 1;
                           return GridView.builder(
                             itemCount: stats.length,
                             shrinkWrap: true,
                             physics: const NeverScrollableScrollPhysics(),
                             gridDelegate:
                                 SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: crossAxisCount,
-                              crossAxisSpacing: 14,
-                              mainAxisSpacing: 14,
-                              mainAxisExtent: 122,
-                            ),
+                                  crossAxisCount: crossAxisCount,
+                                  crossAxisSpacing: 14,
+                                  mainAxisSpacing: 14,
+                                  mainAxisExtent: 122,
+                                ),
                             itemBuilder: (context, index) {
                               final stat = stats[index];
                               return PremiumStatCard(
@@ -394,46 +327,48 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
                         title: 'Өнөөдрийн цагууд',
                         icon: Icons.calendar_month_rounded,
                         child: _AppointmentList(
-                            appointments: todayAppointments,
-                            emptyTitle: 'Өнөөдөр захиалгатай өвчтөн алга.',
-                            emptySubtitle: 'Шинэ цаг орж ирвэл энд харагдана.',
-                            busyAppointmentIds: _busyAppointmentIds,
-                            onViewDetails: _showAppointmentDetails,
-                            onStartVisit: (appointmentId) => _updateAppointmentStatus(
-                              appointmentId: appointmentId,
-                              status: 'CONFIRMED',
-                              successMessage: 'Үзлэг эхэллээ (CONFIRMED).',
-                            ),
-                            onCompleteVisit: (appointmentId) => _updateAppointmentStatus(
-                              appointmentId: appointmentId,
-                              status: 'COMPLETED',
-                              successMessage: 'Үзлэг дууслаа (COMPLETED).',
-                            ),
-                          ),
+                          appointments: todayAppointments,
+                          emptyTitle: 'Өнөөдөр захиалгатай өвчтөн алга.',
+                          emptySubtitle: 'Шинэ цаг орж ирвэл энд харагдана.',
+                          busyAppointmentIds: _busyAppointmentIds,
+                          onViewDetails: _showAppointmentDetails,
+                          onStartVisit: (appointmentId) =>
+                              _updateAppointmentStatus(
+                                appointmentId: appointmentId,
+                                status: 'CONFIRMED',
+                                successMessage: 'Үзлэг эхэллээ (CONFIRMED).',
+                              ),
+                          onCompleteVisit: (appointmentId) =>
+                              _updateAppointmentStatus(
+                                appointmentId: appointmentId,
+                                status: 'COMPLETED',
+                                successMessage: 'Үзлэг дууслаа (COMPLETED).',
+                              ),
+                        ),
                       ),
                       const SizedBox(height: 16),
                       PremiumSectionCard(
                         title: 'Удахгүй үзүүлэх өвчтөнүүд',
                         icon: Icons.watch_later_rounded,
                         child: _AppointmentList(
-                            appointments: upcomingAppointments,
-                            emptyTitle:
-                                'Одоогоор удахгүй үзүүлэх цаг олдсонгүй.',
-                            emptySubtitle:
-                                'Шинэ захиалга нэмэгдэхэд энд гарна.',
-                            busyAppointmentIds: _busyAppointmentIds,
-                            onViewDetails: _showAppointmentDetails,
-                            onStartVisit: (appointmentId) => _updateAppointmentStatus(
-                              appointmentId: appointmentId,
-                              status: 'CONFIRMED',
-                              successMessage: 'Үзлэг эхэллээ (CONFIRMED).',
-                            ),
-                            onCompleteVisit: (appointmentId) => _updateAppointmentStatus(
-                              appointmentId: appointmentId,
-                              status: 'COMPLETED',
-                              successMessage: 'Үзлэг дууслаа (COMPLETED).',
-                            ),
-                          ),
+                          appointments: upcomingAppointments,
+                          emptyTitle: 'Одоогоор удахгүй үзүүлэх цаг олдсонгүй.',
+                          emptySubtitle: 'Шинэ захиалга нэмэгдэхэд энд гарна.',
+                          busyAppointmentIds: _busyAppointmentIds,
+                          onViewDetails: _showAppointmentDetails,
+                          onStartVisit: (appointmentId) =>
+                              _updateAppointmentStatus(
+                                appointmentId: appointmentId,
+                                status: 'CONFIRMED',
+                                successMessage: 'Үзлэг эхэллээ (CONFIRMED).',
+                              ),
+                          onCompleteVisit: (appointmentId) =>
+                              _updateAppointmentStatus(
+                                appointmentId: appointmentId,
+                                status: 'COMPLETED',
+                                successMessage: 'Үзлэг дууслаа (COMPLETED).',
+                              ),
+                        ),
                       ),
                       const SizedBox(height: 16),
                       PremiumSectionCard(
@@ -479,7 +414,6 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
   }
 }
 
-
 class _AppointmentList extends StatelessWidget {
   const _AppointmentList({
     required this.appointments,
@@ -519,11 +453,14 @@ class _AppointmentList extends StatelessWidget {
         final patientPhoneMap = Map<String, dynamic>.from(user);
         final service = appointment['service'] as Map? ?? const {};
         final branch = appointment['branch'] as Map? ?? const {};
-        final status = (appointment['status']?.toString() ?? 'PENDING').toUpperCase();
-        final canStart = appointmentId.isNotEmpty &&
+        final status = (appointment['status']?.toString() ?? 'PENDING')
+            .toUpperCase();
+        final canStart =
+            appointmentId.isNotEmpty &&
             !isBusy &&
             (status == 'PENDING' || status == 'CONFIRMED');
-        final canComplete = appointmentId.isNotEmpty &&
+        final canComplete =
+            appointmentId.isNotEmpty &&
             !isBusy &&
             (status == 'CONFIRMED' || status == 'NO_SHOW');
         return PremiumAppointmentCard(
@@ -535,8 +472,11 @@ class _AppointmentList extends StatelessWidget {
                   CircleAvatar(
                     radius: 18,
                     backgroundColor: ClinovaPremium.pillBlueBg,
-                    child: Icon(Icons.person_rounded,
-                        size: 20, color: ClinovaPremium.primary),
+                    child: Icon(
+                      Icons.person_rounded,
+                      size: 20,
+                      color: ClinovaPremium.primary,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -557,19 +497,25 @@ class _AppointmentList extends StatelessWidget {
               Text(
                 '${service['name'] ?? l10n.consultationFallback} • ${_fmtDateTime(appointment['startsAt'])}',
                 style: const TextStyle(
-                    color: ClinovaPremium.textSecondary, height: 1.3),
+                  color: ClinovaPremium.textSecondary,
+                  height: 1.3,
+                ),
               ),
               const SizedBox(height: 4),
               Text(
                 'Салбар: ${branch['name'] ?? '—'}',
                 style: const TextStyle(
-                    color: ClinovaPremium.textMuted, fontSize: 13),
+                  color: ClinovaPremium.textMuted,
+                  fontSize: 13,
+                ),
               ),
               const SizedBox(height: 4),
               Text(
                 'Өвчтөний утас: ${displayMnRegisteredPhone(patientPhoneMap)}',
                 style: const TextStyle(
-                    color: ClinovaPremium.textMuted, fontSize: 13),
+                  color: ClinovaPremium.textMuted,
+                  fontSize: 13,
+                ),
               ),
               const SizedBox(height: 14),
               Wrap(
@@ -581,13 +527,15 @@ class _AppointmentList extends StatelessWidget {
                     style: OutlinedButton.styleFrom(
                       foregroundColor: ClinovaPremium.textPrimary,
                       side: BorderSide(
-                          color:
-                              ClinovaPremium.border.withValues(alpha: 0.95)),
+                        color: ClinovaPremium.border.withValues(alpha: 0.95),
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 12),
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
                     ),
                     child: const Text('Дэлгэрэнгүй'),
                   ),
@@ -596,15 +544,20 @@ class _AppointmentList extends StatelessWidget {
                     style: OutlinedButton.styleFrom(
                       foregroundColor: ClinovaPremium.textPrimary,
                       side: BorderSide(
-                        color:
-                            ClinovaPremium.border.withValues(alpha: 0.95)),
+                        color: ClinovaPremium.border.withValues(alpha: 0.95),
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 12),
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
                     ),
-                    icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+                    icon: const Icon(
+                      Icons.chat_bubble_outline_rounded,
+                      size: 18,
+                    ),
                     label: const Text('Чат'),
                   ),
                   FilledButton(
@@ -614,13 +567,16 @@ class _AppointmentList extends StatelessWidget {
                     style: FilledButton.styleFrom(
                       backgroundColor: ClinovaPremium.primary,
                       foregroundColor: Colors.white,
-                      disabledBackgroundColor:
-                          ClinovaPremium.border.withValues(alpha: 0.45),
+                      disabledBackgroundColor: ClinovaPremium.border.withValues(
+                        alpha: 0.45,
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 18, vertical: 12),
+                        horizontal: 18,
+                        vertical: 12,
+                      ),
                     ),
                     child: Text(isBusy ? '...' : 'Үзлэг эхлүүлэх'),
                   ),
@@ -631,13 +587,15 @@ class _AppointmentList extends StatelessWidget {
                     style: OutlinedButton.styleFrom(
                       foregroundColor: ClinovaPremium.primaryInk,
                       side: BorderSide(
-                          color:
-                              ClinovaPremium.primary.withValues(alpha: 0.45)),
+                        color: ClinovaPremium.primary.withValues(alpha: 0.45),
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 12),
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
                     ),
                     child: Text(isBusy ? '...' : 'Дуусгах'),
                   ),
@@ -716,10 +674,7 @@ class _PendingChatRequestTile extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               note,
-              style: const TextStyle(
-                color: Color(0xFF475569),
-                height: 1.35,
-              ),
+              style: const TextStyle(color: Color(0xFF475569), height: 1.35),
             ),
           ],
           if (created.isNotEmpty)
@@ -727,10 +682,7 @@ class _PendingChatRequestTile extends StatelessWidget {
               padding: const EdgeInsets.only(top: 6),
               child: Text(
                 created,
-                style: const TextStyle(
-                  color: Color(0xFF94A3B8),
-                  fontSize: 11,
-                ),
+                style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
               ),
             ),
           const SizedBox(height: 10),

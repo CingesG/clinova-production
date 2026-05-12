@@ -29,6 +29,11 @@ class ClinovaTheme {
     );
 
     return base.copyWith(
+      drawerTheme: DrawerThemeData(
+        scrimColor: const Color(0xFF0F172A).withValues(alpha: 0.38),
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+      ),
       scaffoldBackgroundColor: const Color(0xFFF5F8FB),
       appBarTheme: base.appBarTheme.copyWith(
         backgroundColor: Colors.transparent,

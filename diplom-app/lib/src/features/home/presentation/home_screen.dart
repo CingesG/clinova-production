@@ -12,6 +12,7 @@ import '../../../core/network/online_presence_provider.dart';
 import '../../../core/widgets/clinova_backdrop.dart';
 import '../../../core/widgets/clinova_circle_avatar.dart';
 import '../../../core/widgets/clinova_logo.dart';
+import '../../../core/widgets/clinova_premium_drawer.dart';
 import '../../auth/application/auth_controller.dart';
 import '../../chat/doctor_chat_route.dart';
 import '../../chat/services/doctor_chat_start_service.dart';
@@ -80,6 +81,7 @@ Future<void> _homeOpenDoctorChatFlow(
   required String doctorId,
   required bool patientAuthed,
   required Map<String, Map<String, dynamic>> chatPermissionByDoctor,
+
   /// Нүүр дээрх «Эмчтэй чат эхлүүлэх» — зөвшөөрөлгүй үед dialog биш snackbar.
   bool mainStartChatCta = false,
   Map<String, dynamic>? doctorDebugRow,
@@ -125,7 +127,9 @@ Future<void> _homeOpenDoctorChatFlow(
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(DoctorChatStartService.userMessageForStartFailure(e)),
+              content: Text(
+                DoctorChatStartService.userMessageForStartFailure(e),
+              ),
             ),
           );
         }
@@ -136,9 +140,7 @@ Future<void> _homeOpenDoctorChatFlow(
   if (pending) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Таны чат хүсэлт хүлээгдэж байна.'),
-        ),
+        const SnackBar(content: Text('Таны чат хүсэлт хүлээгдэж байна.')),
       );
     }
     return;
@@ -193,20 +195,22 @@ Future<void> _homeOpenDoctorChatFlow(
   );
   if (submitted == true && context.mounted) {
     try {
-      await ref.read(clinovaApiProvider).createDoctorChatRequest(
+      await ref
+          .read(clinovaApiProvider)
+          .createDoctorChatRequest(
             doctorProfileId: doctorId,
             note: note.text.trim().isEmpty ? null : note.text.trim(),
           );
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Чат хүсэлт илгээгдлээ.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Чат хүсэлт илгээгдлээ.')));
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$e')));
       }
     }
   }
@@ -301,7 +305,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
     return Scaffold(
-      endDrawer: isDesktop ? null : const _HomeDrawer(),
+      endDrawer: isDesktop ? null : const ClinovaPatientHomeDrawer(),
       appBar: isDesktop
           ? null
           : AppBar(
@@ -436,10 +440,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             (dashboard['appointmentHistory'] as List?)
                                 ?.cast<Map<String, dynamic>>() ??
                             const <Map<String, dynamic>>[];
-                        for (final ap in [
-                          ...upcomingAppointments,
-                          ...pastAp,
-                        ]) {
+                        for (final ap in [...upcomingAppointments, ...pastAp]) {
                           final st = (ap['status'] ?? '')
                               .toString()
                               .toUpperCase();
@@ -449,8 +450,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           final did = doc['id']?.toString() ?? '';
                           if (did.isEmpty) continue;
                           myDoctorsById[did] = doc;
-                          myDoctorStatus[did] =
-                              ap['status']?.toString() ?? st;
+                          myDoctorStatus[did] = ap['status']?.toString() ?? st;
                         }
                       }
                     }
@@ -505,7 +505,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                           context.push('/appointments/book'),
                                       onAi: () => context.push('/agent'),
                                     ),
-                                    const SizedBox(height: _HomeLayout.blockGap),
+                                    const SizedBox(
+                                      height: _HomeLayout.blockGap,
+                                    ),
                                     RepaintBoundary(
                                       child: _HomeQuickActions(
                                         screenWidth: screenW,
@@ -513,7 +515,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                         theme: theme,
                                       ),
                                     ),
-                                    const SizedBox(height: _HomeLayout.sectionGap),
+                                    const SizedBox(
+                                      height: _HomeLayout.sectionGap,
+                                    ),
                                     _HomeDepartmentStrip(
                                       l10n: l10n,
                                       entDeptId: entDeptId,
@@ -521,7 +525,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                       dermDeptId: dermDeptId,
                                       gynDeptId: gynDeptId,
                                     ),
-                                    const SizedBox(height: _HomeLayout.sectionGap),
+                                    const SizedBox(
+                                      height: _HomeLayout.sectionGap,
+                                    ),
                                     if (isAuthed && user?.role == 'PATIENT')
                                       _PatientHealthSection(
                                         l10n: l10n,
@@ -530,7 +536,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                         profileCompletionRaw: profileCompletion,
                                       ),
                                     if (isAuthed && user?.role == 'PATIENT')
-                                      const SizedBox(height: _HomeLayout.sectionGap),
+                                      const SizedBox(
+                                        height: _HomeLayout.sectionGap,
+                                      ),
                                     if (isAuthed &&
                                         user?.role == 'PATIENT' &&
                                         myDoctorsById.isNotEmpty)
@@ -543,19 +551,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                     if (isAuthed &&
                                         user?.role == 'PATIENT' &&
                                         myDoctorsById.isNotEmpty)
-                                      const SizedBox(height: _HomeLayout.sectionGap),
+                                      const SizedBox(
+                                        height: _HomeLayout.sectionGap,
+                                      ),
                                     RepaintBoundary(
                                       child: _HomeAiPromoSection(
                                         l10n: l10n,
                                         theme: theme,
                                       ),
                                     ),
-                                    const SizedBox(height: _HomeLayout.sectionGap),
+                                    const SizedBox(
+                                      height: _HomeLayout.sectionGap,
+                                    ),
                                     _SectionHeader(
                                       title: l10n.homeTodayTitle,
                                       subtitle: l10n.homeTodaySubtitle,
                                     ),
-                                    const SizedBox(height: _HomeLayout.blockGap),
+                                    const SizedBox(
+                                      height: _HomeLayout.blockGap,
+                                    ),
                                     if (snapshot.connectionState ==
                                         ConnectionState.waiting)
                                       const Center(
@@ -624,7 +638,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                           ),
                                         );
                                       }),
-                                    const SizedBox(height: _HomeLayout.sectionGap),
+                                    const SizedBox(
+                                      height: _HomeLayout.sectionGap,
+                                    ),
                                     RepaintBoundary(
                                       child: _StaffPreviewSection(
                                         key: _doctorsSectionKey,
@@ -639,7 +655,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                             chatPermissionByDoctor,
                                       ),
                                     ),
-                                    const SizedBox(height: _HomeLayout.sectionGap),
+                                    const SizedBox(
+                                      height: _HomeLayout.sectionGap,
+                                    ),
                                     RepaintBoundary(
                                       child: _BranchesPreviewSection(
                                         l10n: l10n,
@@ -733,10 +751,8 @@ class _HomeQuickActions extends StatelessWidget {
           padding: const EdgeInsets.only(right: 2),
           itemCount: items.length,
           separatorBuilder: (context, index) => const SizedBox(width: 10),
-          itemBuilder: (context, i) => SizedBox(
-            width: 168,
-            child: card(items[i]),
-          ),
+          itemBuilder: (context, i) =>
+              SizedBox(width: 168, child: card(items[i])),
         ),
       );
     }
@@ -876,16 +892,16 @@ class _HomeDepartmentStrip extends StatelessWidget {
         Text(
           l10n.homeMoveFasterTitle,
           style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w800,
-                color: const Color(0xFF102A43),
-              ),
+            fontWeight: FontWeight.w800,
+            color: const Color(0xFF102A43),
+          ),
         ),
         const SizedBox(height: 4),
         Text(
           l10n.homeMoveFasterSubtitle,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
         const SizedBox(height: 10),
         SizedBox(
@@ -1125,15 +1141,14 @@ class _PatientHealthSection extends StatelessWidget {
         past.isNotEmpty ||
         upcoming.isNotEmpty;
 
-    final profilePct = int.tryParse(
+    final profilePct =
+        int.tryParse(
           profileCompletionRaw.replaceAll('%', '').trim(),
         )?.clamp(0, 100) ??
         0;
 
-    final lastLine =
-        past.isNotEmpty ? _visitOneLiner(past.first) : '';
-    final nextLine =
-        upcoming.isNotEmpty ? _visitOneLiner(upcoming.first) : '';
+    final lastLine = past.isNotEmpty ? _visitOneLiner(past.first) : '';
+    final nextLine = upcoming.isNotEmpty ? _visitOneLiner(upcoming.first) : '';
 
     Widget miniCard({
       required IconData icon,
@@ -1339,7 +1354,9 @@ class _PatientHealthSection extends StatelessWidget {
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: const Color(0xFF1769FF).withValues(alpha: 0.35)),
+                      border: Border.all(
+                        color: const Color(0xFF1769FF).withValues(alpha: 0.35),
+                      ),
                       color: const Color(0xFF1769FF).withValues(alpha: 0.06),
                     ),
                     child: Row(
@@ -1408,8 +1425,9 @@ class _PatientHealthSection extends StatelessWidget {
                   final sx = r['symptoms']?.toString() ?? '';
                   final line = [dx, sx].where((e) => e.isNotEmpty).join(' · ');
                   final du = r['doctor']?['user'];
-                  final dname =
-                      du is Map<String, dynamic> ? _userFullName(du) : '';
+                  final dname = du is Map<String, dynamic>
+                      ? _userFullName(du)
+                      : '';
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 6),
                     child: Row(
@@ -1553,7 +1571,10 @@ class _MyDoctorsSection extends StatelessWidget {
             Align(
               alignment: Alignment.centerLeft,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: cs.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(999),
@@ -1589,7 +1610,10 @@ class _MyDoctorsSection extends StatelessWidget {
                     onPressed: () => context.push(
                       '/doctor-chat?doctorId=${Uri.encodeComponent(docId)}',
                     ),
-                    icon: const Icon(Icons.chat_bubble_outline_rounded, size: 17),
+                    icon: const Icon(
+                      Icons.chat_bubble_outline_rounded,
+                      size: 17,
+                    ),
                     label: const Text('Чатлах'),
                     style: FilledButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 10),
@@ -1642,11 +1666,10 @@ class _MyDoctorsSection extends StatelessWidget {
                   clipBehavior: Clip.hardEdge,
                   padding: const EdgeInsets.only(right: 2),
                   itemCount: entries.length,
-                  separatorBuilder: (context, index) => const SizedBox(width: 10),
-                  itemBuilder: (context, i) => SizedBox(
-                    width: 268,
-                    child: doctorCard(i),
-                  ),
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(width: 10),
+                  itemBuilder: (context, i) =>
+                      SizedBox(width: 268, child: doctorCard(i)),
                 ),
               );
             }
@@ -1873,17 +1896,16 @@ class _StaffPreviewSectionState extends ConsumerState<_StaffPreviewSection> {
                   ? ratingVal.toStringAsFixed(1)
                   : '4.8';
               final perm = chatPermissionByDoctor[docId];
-              final canChat =
-                  patientAuthed && (perm?['canChat'] == true);
+              final canChat = patientAuthed && (perm?['canChat'] == true);
               final pendingReq =
                   patientAuthed && (perm?['pendingRequest'] == true);
               final chatLabel = !patientAuthed
                   ? 'Чат'
                   : canChat
-                      ? 'Чатлах'
-                      : pendingReq
-                          ? 'Хүлээгдэж'
-                          : 'Чат хүсэлт';
+                  ? 'Чатлах'
+                  : pendingReq
+                  ? 'Хүлээгдэж'
+                  : 'Чат хүсэлт';
               final selected = docId.isNotEmpty && _selectedDoctorId == docId;
               const primarySel = Color(0xFF1769FF);
               return Material(
@@ -1894,8 +1916,7 @@ class _StaffPreviewSectionState extends ConsumerState<_StaffPreviewSection> {
                       ? null
                       : () {
                           setState(() {
-                            _selectedDoctorId =
-                                selected ? null : docId;
+                            _selectedDoctorId = selected ? null : docId;
                           });
                         },
                   child: Container(
@@ -1922,188 +1943,193 @@ class _StaffPreviewSectionState extends ConsumerState<_StaffPreviewSection> {
                       clipBehavior: Clip.none,
                       children: [
                         Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Stack(
-                              clipBehavior: Clip.none,
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _DoctorAvatar(
-                                  doctorName: name,
-                                  initial: initial,
-                                  gender: gender,
-                                ),
-                                if (isOnline)
-                                  Positioned(
-                                    right: 0,
-                                    bottom: 0,
-                                    child: Container(
-                                      width: 14,
-                                      height: 14,
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFF22C55E),
-                                        shape: BoxShape.circle,
-                                        border: Border.all(
-                                          color: Colors.white,
-                                          width: 2,
+                                Stack(
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    _DoctorAvatar(
+                                      doctorName: name,
+                                      initial: initial,
+                                      gender: gender,
+                                    ),
+                                    if (isOnline)
+                                      Positioned(
+                                        right: 0,
+                                        bottom: 0,
+                                        child: Container(
+                                          width: 14,
+                                          height: 14,
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF22C55E),
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: Colors.white,
+                                              width: 2,
+                                            ),
+                                          ),
                                         ),
                                       ),
+                                  ],
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      if (hasSlotToday)
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            bottom: 4,
+                                          ),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 3,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFDCFCE7),
+                                              borderRadius:
+                                                  BorderRadius.circular(999),
+                                            ),
+                                            child: const Text(
+                                              'Өнөөдөр',
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w800,
+                                                color: Color(0xFF166534),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      Text(
+                                        '★ $ratingText',
+                                        style: theme.textTheme.labelMedium
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                              color: const Color(0xFFF59E0B),
+                                            ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            InkWell(
+                              onTap: docId.isEmpty
+                                  ? null
+                                  : () =>
+                                        context.push('/doctor-profile/$docId'),
+                              child: Text(
+                                name.isEmpty ? '—' : name,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  height: 1.2,
+                                ),
+                              ),
+                            ),
+                            if (dept.isNotEmpty)
+                              Text(
+                                dept,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: cs.onSurfaceVariant,
+                                ),
+                              ),
+                            if (branch.isNotEmpty)
+                              Text(
+                                branch,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: cs.onSurfaceVariant,
+                                ),
+                              ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 4,
+                              runSpacing: 4,
+                              alignment: WrapAlignment.start,
+                              children: [
+                                TextButton(
+                                  style: TextButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    minimumSize: Size.zero,
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                  onPressed: docId.isEmpty
+                                      ? null
+                                      : () => context.push(
+                                          '/doctor-profile/$docId',
+                                        ),
+                                  child: const Text(
+                                    'Профайл харах',
+                                    style: TextStyle(fontSize: 11),
+                                  ),
+                                ),
+                                TextButton(
+                                  style: TextButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    minimumSize: Size.zero,
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                  onPressed: docId.isEmpty
+                                      ? null
+                                      : () => _goAppointments(context, {
+                                          'doctorId': docId,
+                                        }),
+                                  child: const Text(
+                                    'Цаг',
+                                    style: TextStyle(fontSize: 11),
+                                  ),
+                                ),
+                                if (!patientAuthed || !canChat)
+                                  FilledButton.tonal(
+                                    style: FilledButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 6,
+                                      ),
+                                      minimumSize: Size.zero,
+                                      tapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    onPressed: docId.isEmpty
+                                        ? null
+                                        : () => _homeOpenDoctorChatFlow(
+                                            context,
+                                            ref,
+                                            doctorId: docId,
+                                            patientAuthed: patientAuthed,
+                                            chatPermissionByDoctor:
+                                                chatPermissionByDoctor,
+                                            doctorDebugRow: d,
+                                          ),
+                                    child: Text(
+                                      chatLabel,
+                                      style: const TextStyle(fontSize: 11),
                                     ),
                                   ),
                               ],
                             ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (hasSlotToday)
-                                    Padding(
-                                      padding: const EdgeInsets.only(bottom: 4),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 3,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFDCFCE7),
-                                          borderRadius: BorderRadius.circular(
-                                            999,
-                                          ),
-                                        ),
-                                        child: const Text(
-                                          'Өнөөдөр',
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w800,
-                                            color: Color(0xFF166534),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  Text(
-                                    '★ $ratingText',
-                                    style: theme.textTheme.labelMedium
-                                        ?.copyWith(
-                                          fontWeight: FontWeight.w700,
-                                          color: const Color(0xFFF59E0B),
-                                        ),
-                                  ),
-                                ],
-                              ),
-                            ),
                           ],
                         ),
-                        const SizedBox(height: 8),
-                        InkWell(
-                          onTap: docId.isEmpty
-                              ? null
-                              : () => context.push('/doctor-profile/$docId'),
-                          child: Text(
-                            name.isEmpty ? '—' : name,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w800,
-                              height: 1.2,
-                            ),
-                          ),
-                        ),
-                        if (dept.isNotEmpty)
-                          Text(
-                            dept,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: cs.onSurfaceVariant,
-                            ),
-                          ),
-                        if (branch.isNotEmpty)
-                          Text(
-                            branch,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: cs.onSurfaceVariant,
-                            ),
-                          ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 4,
-                          runSpacing: 4,
-                          alignment: WrapAlignment.start,
-                          children: [
-                            TextButton(
-                              style: TextButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                minimumSize: Size.zero,
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                              onPressed: docId.isEmpty
-                                  ? null
-                                  : () => context.push(
-                                        '/doctor-profile/$docId',
-                                      ),
-                              child: const Text(
-                                'Профайл харах',
-                                style: TextStyle(fontSize: 11),
-                              ),
-                            ),
-                            TextButton(
-                              style: TextButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                minimumSize: Size.zero,
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                              onPressed: docId.isEmpty
-                                  ? null
-                                  : () => _goAppointments(context, {
-                                        'doctorId': docId,
-                                      }),
-                              child: const Text(
-                                'Цаг',
-                                style: TextStyle(fontSize: 11),
-                              ),
-                            ),
-                            if (!patientAuthed || !canChat)
-                              FilledButton.tonal(
-                                style: FilledButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 6,
-                                  ),
-                                  minimumSize: Size.zero,
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                ),
-                                onPressed: docId.isEmpty
-                                    ? null
-                                    : () => _homeOpenDoctorChatFlow(
-                                          context,
-                                          ref,
-                                          doctorId: docId,
-                                          patientAuthed: patientAuthed,
-                                          chatPermissionByDoctor:
-                                              chatPermissionByDoctor,
-                                          doctorDebugRow: d,
-                                        ),
-                                child: Text(
-                                  chatLabel,
-                                  style: const TextStyle(fontSize: 11),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ],
-                    ),
                         Positioned(
                           right: 2,
                           bottom: 2,
@@ -2363,111 +2389,6 @@ class _BranchesPreviewSection extends StatelessWidget {
   }
 }
 
-class _HomeDrawer extends StatelessWidget {
-  const _HomeDrawer();
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    final theme = Theme.of(context);
-    return Drawer(
-      backgroundColor: theme.colorScheme.surface,
-      child: SafeArea(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            DrawerHeader(
-              margin: EdgeInsets.zero,
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.primaryContainer.withValues(
-                  alpha: 0.4,
-                ),
-              ),
-              child: Align(
-                alignment: Alignment.bottomLeft,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      l10n.homeMenuTitle,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    const ClinovaLogo(size: 44, variant: LogoVariant.dark),
-                  ],
-                ),
-              ),
-            ),
-            ListTile(
-              leading: Icon(
-                Icons.calendar_month_rounded,
-                color: theme.colorScheme.primary,
-              ),
-              title: Text(l10n.homeCardBookVisitTitle),
-              subtitle: Text(l10n.homeCardBookVisitSubtitle),
-              onTap: () {
-                Navigator.pop(context);
-                context.push('/appointments');
-              },
-            ),
-            ListTile(
-              leading: Icon(
-                Icons.auto_awesome_rounded,
-                color: theme.colorScheme.primary,
-              ),
-              title: Text('${l10n.aiTitle} · ${l10n.homeDrawerAgent}'),
-              subtitle: Text(l10n.homeDrawerAiAgentSubtitle),
-              onTap: () {
-                Navigator.pop(context);
-                context.push('/agent');
-              },
-            ),
-            ListTile(
-              leading: Icon(
-                Icons.chat_bubble_rounded,
-                color: theme.colorScheme.primary,
-              ),
-              title: Text(l10n.homeCardLiveChatTitle),
-              subtitle: Text(l10n.homeCardLiveChatSubtitle),
-              onTap: () {
-                Navigator.pop(context);
-                context.push('/chat-landing');
-              },
-            ),
-            ListTile(
-              leading: Icon(
-                Icons.tune_rounded,
-                color: theme.colorScheme.primary,
-              ),
-              title: Text(l10n.settings),
-              onTap: () {
-                Navigator.pop(context);
-                context.push('/settings');
-              },
-            ),
-            ListTile(
-              leading: Icon(
-                Icons.location_on_rounded,
-                color: theme.colorScheme.primary,
-              ),
-              title: Text(l10n.homeCardBranchesTitle),
-              subtitle: Text(l10n.homeCardBranchesSubtitle),
-              onTap: () {
-                Navigator.pop(context);
-                context.push('/branches');
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _HeroPanel extends StatelessWidget {
   const _HeroPanel({
     required this.isWide,
@@ -2496,7 +2417,8 @@ class _HeroPanel extends StatelessWidget {
         : l10n.homePremiumHeadlineGuest;
     final subtitle = l10n.homePremiumSubtitle;
 
-    final profilePct = int.tryParse(
+    final profilePct =
+        int.tryParse(
           profileCompletion.replaceAll('%', '').trim(),
         )?.clamp(0, 100) ??
         0;
@@ -2603,9 +2525,7 @@ class _HeroPanel extends StatelessWidget {
       final ap = nextAppointment!;
       final dt = ap['startsAt']?.toString() ?? '';
       final st = DateTime.tryParse(dt);
-      final when = st != null
-          ? DateFormat('MMM d · HH:mm').format(st)
-          : dt;
+      final when = st != null ? DateFormat('MMM d · HH:mm').format(st) : dt;
       final doc = _appointmentDoctorName(ap);
       apptPreview = [when, doc].where((e) => e.isNotEmpty).join(' · ');
     }
