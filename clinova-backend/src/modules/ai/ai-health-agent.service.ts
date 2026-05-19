@@ -809,6 +809,7 @@ export class AiHealthAgentService {
     return {
       items: items.map((d) => ({
         id: d.id,
+        doctorProfileId: d.id,
         name: `${d.user.firstName ?? ''} ${d.user.lastName ?? ''}`.trim(),
         specialty: d.department.name,
         branch: d.branch.name,
@@ -841,6 +842,7 @@ export class AiHealthAgentService {
     return {
       items: items.map((d) => ({
         id: d.id,
+        doctorProfileId: d.id,
         name: `${d.user.firstName ?? ''} ${d.user.lastName ?? ''}`.trim(),
         specialty: d.department.name,
         branch: d.branch.name,
@@ -1083,7 +1085,16 @@ export class AiHealthAgentService {
     const sugOnly = this.toStrings(raw.suggestions).slice(0, 5);
     const suggestions = [...new Set([...followUpQuestions, ...sugOnly])].slice(0, 6);
     const recommendedServices = this.toObjects(raw.recommendedServices);
-    const recommendedDoctors = this.toObjects(raw.recommendedDoctors);
+    const recommendedDoctors = this.toObjects(raw.recommendedDoctors).map((d) => {
+      const profileId = String(
+        d['doctorProfileId'] ?? d['id'] ?? d['doctorId'] ?? '',
+      ).trim();
+      return {
+        ...d,
+        id: profileId || d['id'],
+        doctorProfileId: profileId || d['doctorProfileId'],
+      };
+    });
     const availableSlots = this.toObjects(raw.availableSlots);
     const deptRaw = raw.recommendedDepartment != null ? String(raw.recommendedDepartment).trim() : '';
     const recommendedDepartment =

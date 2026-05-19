@@ -511,7 +511,7 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
       final list = isDoctorRole
           ? await _loadDoctorPatients()
           : (authedPatient
-              ? await api.getPatientAllowedChatDoctors()
+              ? await api.getActiveDoctors()
               : await api.getDoctors());
 
       if (!mounted) return;

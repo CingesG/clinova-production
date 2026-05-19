@@ -31,6 +31,8 @@ class RealtimeService {
       StreamController<Map<String, dynamic>>.broadcast();
   final StreamController<Map<String, dynamic>> _chatRequestResolvedStream =
       StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<Map<String, dynamic>> _doctorsChangedStream =
+      StreamController<Map<String, dynamic>>.broadcast();
 
   /// One broadcast stream for all `chat:message` events; filter by `roomId` in the listener.
   Stream<Map<String, dynamic>> get chatMessageStream => _chatStream.stream;
@@ -45,6 +47,8 @@ class RealtimeService {
       _chatRequestStream.stream;
   Stream<Map<String, dynamic>> get chatRequestResolvedStream =>
       _chatRequestResolvedStream.stream;
+  Stream<Map<String, dynamic>> get doctorsChangedStream =>
+      _doctorsChangedStream.stream;
 
   void connect({String? userId, String? accessToken}) {
     final normalizedUserId = (userId ?? '').trim();
@@ -96,6 +100,7 @@ class RealtimeService {
       ..off('appointments:updated')
       ..off('chat:request')
       ..off('chat:request:resolved')
+      ..off('doctors:changed')
       ..off('connect')
       ..off('connect_error')
       ..off('disconnect')
@@ -153,6 +158,10 @@ class RealtimeService {
       ..on('chat:request:resolved', (data) {
         final map = _asMap(data);
         if (map != null) _chatRequestResolvedStream.add(map);
+      })
+      ..on('doctors:changed', (data) {
+        final map = _asMap(data);
+        if (map != null) _doctorsChangedStream.add(map);
       })
       ..on('call:offer', (data) {
         final map = _asMap(data);

@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -15,6 +15,8 @@ import '../../../core/navigation/go_router_pop.dart';
 import '../../../core/network/clinova_api.dart';
 import '../../../core/widgets/clinova_backdrop.dart';
 import '../../auth/application/auth_controller.dart';
+import '../../chat/doctor_chat_route.dart';
+import '../../chat/services/doctor_chat_start_service.dart';
 
 const _maxVisionImages = 4;
 const _maxChatContentWidth = 720.0;
@@ -544,6 +546,7 @@ class _AiAgentScreenState extends ConsumerState<AiAgentScreen> {
   String? _conversationId;
   String _retryMessageText = '';
   final List<Map<String, dynamic>> _retryImagesPayload = [];
+  bool _chatStartBusy = false;
 
   @override
   void initState() {
@@ -743,6 +746,81 @@ class _AiAgentScreenState extends ConsumerState<AiAgentScreen> {
     });
   }
 
+  Future<void> _startDoctorChatFlow(String? doctorProfileId) async {
+    final id = doctorProfileId?.trim();
+    if (id == null || id.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Эмчийн мэдээлэл дутуу байна.')),
+      );
+      return;
+    }
+    if (_chatStartBusy) return;
+
+    final auth = ref.read(authControllerProvider);
+    if (!auth.isAuthenticated) {
+      if (mounted) await context.push('/auth/login');
+      return;
+    }
+
+    setState(() => _chatStartBusy = true);
+    try {
+      if (kDebugMode) {
+        debugPrint('[AiAgent][StartChat] doctorProfileId=$id');
+      }
+      final flags = await ref
+          .read(clinovaApiProvider)
+          .getChatPermissionFlags(doctorIds: [id]);
+      final pf = flags[id];
+      final canChat = pf?['canChat'] == true;
+      final pending = pf?['pendingRequest'] == true;
+      if (!canChat) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              pending
+                  ? 'Таны чат хүсэлт хүлээгдэж байна.'
+                  : 'Энэ эмчтэй чат эхлүүлэхийн тулд эхлээд цаг авах эсвэл чат зөвшөөрөл хэрэгтэй.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      final res = await ref
+          .read(doctorChatStartServiceProvider)
+          .startDoctorChat(id);
+      if (kDebugMode) {
+        debugPrint(
+          '[AiAgent][StartChat] conversationId=${res['id']} doctorId=${res['doctorId']}',
+        );
+      }
+      final path = doctorChatDetailLocationFromStartResponse(res);
+      if (!mounted) return;
+      context.push(path);
+    } on FormatException catch (e) {
+      if (kDebugMode) {
+        debugPrint('[AiAgent][StartChat] bad API response: $e');
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Чат эхлүүлэхэд алдаа гарлаа. Дахин оролдоно уу.'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(DoctorChatStartService.userMessageForStartFailure(e)),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _chatStartBusy = false);
+    }
+  }
+
   Future<void> _runAction(Map<String, dynamic> action) async {
     final actionType = action['type']?.toString() ?? '';
     final payload = action['payload'];
@@ -776,6 +854,14 @@ class _AiAgentScreenState extends ConsumerState<AiAgentScreen> {
       return;
     }
 
+    if (actionType == 'OPEN_DOCTOR_CHAT' ||
+        actionType == 'START_DOCTOR_CHAT' ||
+        actionType.toLowerCase() == 'open_chat_doctor') {
+      final docId = params['doctorId'] ?? params['doctorProfileId'];
+      await _startDoctorChatFlow(docId?.toString());
+      return;
+    }
+
     if (actionType == 'OPEN_EMERGENCY' || route.startsWith('emergency:tel')) {
       final n = params['number'] ?? '103';
       final uri = Uri(scheme: 'tel', path: n);
@@ -801,13 +887,9 @@ class _AiAgentScreenState extends ConsumerState<AiAgentScreen> {
       context.push(Uri(path: path, queryParameters: params).toString());
       return;
     }
-    if (path == '/doctor-chat' && params.containsKey('doctorId')) {
-      context.push(
-        Uri(
-          path: path,
-          queryParameters: {'doctorId': params['doctorId']!},
-        ).toString(),
-      );
+    if (path == '/doctor-chat') {
+      final docId = params['doctorId'] ?? params['doctorProfileId'];
+      await _startDoctorChatFlow(docId?.toString());
       return;
     }
     if (path == '/doctor-chat' && !params.containsKey('doctorId')) {
@@ -835,7 +917,9 @@ class _AiAgentScreenState extends ConsumerState<AiAgentScreen> {
     final emptyHero = _messages.isEmpty && !_busy;
     final listItemCount = emptyHero ? 1 : _messages.length + (_busy ? 1 : 0);
 
-    return Scaffold(
+    return Stack(
+      children: [
+        Scaffold(
       backgroundColor: const Color(0xFFE8EEF5),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1193,6 +1277,15 @@ class _AiAgentScreenState extends ConsumerState<AiAgentScreen> {
           ),
         ],
       ),
+    ),
+        if (_chatStartBusy)
+          Positioned.fill(
+            child: ColoredBox(
+              color: Colors.black.withValues(alpha: 0.12),
+              child: const Center(child: CircularProgressIndicator()),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -1496,7 +1589,9 @@ class _AgentCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
               children: [
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -1518,8 +1613,7 @@ class _AgentCard extends StatelessWidget {
                 ),
                 if (urgency != null &&
                     urgency.isNotEmpty &&
-                    urgency.toUpperCase() != 'NONE') ...[
-                  const SizedBox(width: 8),
+                    urgency.toUpperCase() != 'NONE')
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,
@@ -1538,7 +1632,6 @@ class _AgentCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                ],
               ],
             ),
             const SizedBox(height: 10),
@@ -1652,6 +1745,7 @@ class _AgentCard extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               ...doctors.take(4).map((d) {
+                final docId = normalizeDoctorProfileId(d);
                 final name = d['name']?.toString() ?? '';
                 final spec = d['specialty']?.toString() ?? '';
                 final br = d['branch']?.toString() ?? '';
@@ -1685,7 +1779,7 @@ class _AgentCard extends StatelessWidget {
                             'Цаг: ${_humanDateTime(slot)}',
                             style: theme.textTheme.labelSmall,
                           ),
-                        if ((d['id']?.toString() ?? '').isNotEmpty) ...[
+                        if (docId != null) ...[
                           const SizedBox(height: 8),
                           Wrap(
                             spacing: 6,
@@ -1694,12 +1788,10 @@ class _AgentCard extends StatelessWidget {
                               TextButton(
                                 onPressed: () => unawaited(onAction({
                                   'type': 'OPEN_DOCTOR_PROFILE',
-                                  'route':
-                                      '/doctor-profile/${d['id']}',
+                                  'route': '/doctor-profile/$docId',
                                   'params': <String, dynamic>{},
                                   'payload': {
-                                    'route':
-                                        '/doctor-profile/${d['id']}',
+                                    'route': '/doctor-profile/$docId',
                                     'params': <String, dynamic>{},
                                   },
                                 })),
@@ -1709,24 +1801,20 @@ class _AgentCard extends StatelessWidget {
                                 onPressed: () => unawaited(onAction({
                                   'type': 'OPEN_DOCTOR_CHAT',
                                   'route': '/doctor-chat',
-                                  'params': {
-                                    'doctorId': d['id'].toString(),
-                                  },
+                                  'params': {'doctorId': docId},
                                   'payload': {
                                     'route': '/doctor-chat',
-                                    'params': {
-                                      'doctorId': d['id'].toString(),
-                                    },
+                                    'params': {'doctorId': docId},
                                   },
                                 })),
-                                child: const Text('Чат'),
+                                child: const Text('Чат эхлүүлэх'),
                               ),
                               TextButton(
                                 onPressed: () {
                                   final serviceId =
                                       d['serviceId']?.toString() ?? '';
                                   final qp = <String, String>{
-                                    'doctorId': d['id'].toString(),
+                                    'doctorId': docId,
                                     if (serviceId.isNotEmpty)
                                       'serviceId': serviceId,
                                   };

@@ -276,6 +276,11 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     this.server.to(this.userRoomName(id)).emit('chat:request:resolved', payload);
   }
 
+  /** Patient doctor directory: admin create/update/deactivate. */
+  emitDoctorDirectoryChanged(payload: Record<string, unknown>) {
+    this.server.emit('doctors:changed', payload);
+  }
+
   private getUserId(client: Socket) {
     const rawToken = client.handshake.auth?.token;
     if (typeof rawToken === 'string' && rawToken.trim().length > 0) {

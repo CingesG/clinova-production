@@ -32,7 +32,20 @@ class DoctorChatStartService {
         return 'Энэ эмчтэй чатлах эрх одоогоор нээгдээгүй байна.';
       }
       if (code == 404) {
-        return 'Чат үйлчилгээний холбоос олдсонгүй.';
+        final msg = error.response?.data;
+        if (msg is Map && msg['message'] != null) {
+          final text = msg['message'].toString().trim();
+          if (text.isNotEmpty) return text;
+        }
+        return 'Эмч олдсонгүй.';
+      }
+      if (code == 400) {
+        final msg = error.response?.data;
+        if (msg is Map && msg['message'] != null) {
+          final text = msg['message'].toString().trim();
+          if (text.isNotEmpty) return text;
+        }
+        return 'Эмчийн мэдээлэл буруу байна.';
       }
       if (code != null && code >= 500) {
         return 'Чат эхлүүлэхэд алдаа гарлаа. Дахин оролдоно уу.';

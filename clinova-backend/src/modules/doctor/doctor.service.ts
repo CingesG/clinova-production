@@ -22,6 +22,7 @@ import {
 } from '../common/mongolia-phone.util';
 import { USER_DETAIL_ADMIN_SAFE_SELECT } from '../common/user-public-select';
 import { ChatPermissionService } from '../chat/chat-permission.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 
 type DoctorInput = {
   username?: string;
@@ -71,7 +72,113 @@ export class DoctorService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly chatPermission: ChatPermissionService,
+    private readonly realtime: RealtimeGateway,
   ) {}
+
+  /** Stable patient-app doctor card payload (null-safe). */
+  private mapActiveDoctorForPatient(
+    row: {
+      id: string;
+      active: boolean;
+      experienceYears: number;
+      avatarUrl: string | null;
+      user: {
+        id: string;
+        firstName: string | null;
+        lastName: string | null;
+        avatarUrl: string | null;
+        status: UserStatus;
+      };
+      branch: { id: string; name: string };
+      department: { id: string; name: string };
+    },
+  ) {
+    const u = row.user;
+    const first = (u.firstName ?? '').trim();
+    const last = (u.lastName ?? '').trim();
+    const name = `${first} ${last}`.trim() || 'Эмч';
+    const specialization = (row.department?.name ?? '').trim() || '—';
+    const avatarUrl = row.avatarUrl ?? u.avatarUrl ?? null;
+    const experience = row.experienceYears ?? 0;
+    const rating =
+      Math.round((3.6 + Math.min(10, experience) * 0.06) * 10) / 10;
+
+    return {
+      id: row.id,
+      doctorProfileId: row.id,
+      name,
+      specialization,
+      specialty: specialization,
+      avatarUrl,
+      imageUrl: avatarUrl,
+      experience,
+      experienceYears: experience,
+      rating,
+      avgRating: rating,
+      isActive: row.active,
+      status: row.active ? 'ACTIVE' : 'INACTIVE',
+      active: row.active,
+      user: {
+        id: u.id,
+        firstName: u.firstName ?? '',
+        lastName: u.lastName ?? '',
+        avatarUrl: u.avatarUrl ?? null,
+      },
+      branch: row.branch,
+      department: row.department,
+    };
+  }
+
+  /**
+   * All doctors visible on patient «Эмчтэй чат» (active profile + active user).
+   */
+  async listActiveDoctorsForPatient() {
+    const rows = await this.prisma.doctorProfile.findMany({
+      where: {
+        active: true,
+        user: {
+          role: Role.DOCTOR,
+          status: UserStatus.ACTIVE,
+        },
+      },
+      orderBy: [
+        { user: { firstName: 'asc' } },
+        { user: { lastName: 'asc' } },
+      ],
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatarUrl: true,
+            status: true,
+          },
+        },
+        branch: { select: { id: true, name: true } },
+        department: { select: { id: true, name: true } },
+      },
+    });
+
+    const byId = new Map<string, ReturnType<typeof this.mapActiveDoctorForPatient>>();
+    for (const row of rows) {
+      if (!row.id || byId.has(row.id)) continue;
+      byId.set(row.id, this.mapActiveDoctorForPatient(row));
+    }
+    return { items: [...byId.values()] };
+  }
+
+  private emitDoctorDirectoryEvent(
+    event: 'doctor.created' | 'doctor.updated' | 'doctor.statusChanged' | 'doctor.deleted',
+    doctorId: string,
+    doctor?: Record<string, unknown>,
+  ) {
+    this.realtime.emitDoctorDirectoryChanged({
+      event,
+      doctorId,
+      doctor,
+    });
+  }
 
   private coerceOptionalDoctorPhone(raw?: string | null): string | undefined {
     if (raw === undefined || raw === null || !String(raw).trim())
@@ -432,6 +539,24 @@ export class DoctorService {
     });
 
     const payload = await this.getDoctor(doctor.id);
+    const mapped = this.mapActiveDoctorForPatient({
+      id: payload.id,
+      active: payload.active,
+      experienceYears: payload.experienceYears,
+      avatarUrl: payload.avatarUrl,
+      user: {
+        id: payload.user.id,
+        firstName: payload.user.firstName,
+        lastName: payload.user.lastName,
+        avatarUrl: payload.user.avatarUrl,
+        status: payload.user.status,
+      },
+      branch: payload.branch,
+      department: payload.department,
+    });
+    if (payload.active) {
+      this.emitDoctorDirectoryEvent('doctor.created', payload.id, mapped);
+    }
     return {
       ...payload,
       provisionedCredentials: {
@@ -539,7 +664,34 @@ export class DoctorService {
       }
     });
 
-    return this.getDoctor(id);
+    const updated = await this.getDoctor(id);
+    const mapped = this.mapActiveDoctorForPatient({
+      id: updated.id,
+      active: updated.active,
+      experienceYears: updated.experienceYears,
+      avatarUrl: updated.avatarUrl,
+      user: {
+        id: updated.user.id,
+        firstName: updated.user.firstName,
+        lastName: updated.user.lastName,
+        avatarUrl: updated.user.avatarUrl,
+        status: updated.user.status,
+      },
+      branch: updated.branch,
+      department: updated.department,
+    });
+    const evt =
+      input.active === false
+        ? 'doctor.deleted'
+        : input.active === true
+          ? 'doctor.statusChanged'
+          : 'doctor.updated';
+    if (updated.active) {
+      this.emitDoctorDirectoryEvent(evt, id, mapped);
+    } else {
+      this.emitDoctorDirectoryEvent('doctor.deleted', id);
+    }
+    return updated;
   }
 
   async updateOwnDoctor(

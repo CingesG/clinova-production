@@ -1,3 +1,12 @@
+/// **DoctorProfile.id** from agent/API doctor maps (not User.id).
+String? normalizeDoctorProfileId(Map<String, dynamic> raw) {
+  for (final key in ['id', 'doctorId', 'doctorProfileId', '_id']) {
+    final v = raw[key]?.toString().trim();
+    if (v != null && v.isNotEmpty && v != 'null') return v;
+  }
+  return null;
+}
+
 /// Location for `/doctor-chat` after [ClinovaApi.startDoctorConversation].
 ///
 /// [res.doctorId] / [res.doctor.id] = **DoctorProfile.id** (not User.id).

@@ -198,6 +198,12 @@ export class DoctorController {
     });
   }
 
+  /** Patient «Эмчтэй чат» directory — active doctors only, normalized DTO. */
+  @Get('active')
+  listActiveForPatient() {
+    return this.doctorService.listActiveDoctorsForPatient();
+  }
+
   @Get('me/patients')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('DOCTOR')

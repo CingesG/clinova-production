@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import { AppointmentStatus, DoctorChatRequestStatus } from '@prisma/client';
 
@@ -207,26 +208,18 @@ export class ChatPatientContactsService {
       );
     }
 
+    const doctor = await this.resolveDoctorProfile(doctorId);
+    const resolvedDoctorId = doctor.id;
+
     const mayChat = await this.chatPermission.patientDoctorPairMayChat(
       patientUserId,
-      doctorId,
+      resolvedDoctorId,
     );
     if (!mayChat) {
       throw new ForbiddenException(CHAT_DM_FORBIDDEN_MN);
     }
 
-    const doctor = await this.prisma.doctorProfile.findUnique({
-      where: { id: doctorId },
-      select: {
-        id: true,
-        user: { select: USER_PUBLIC_SELECT },
-      },
-    });
-    if (!doctor) {
-      throw new BadRequestException('Doctor not found.');
-    }
-
-    const roomId = `room-${patientUserId}-doc-${doctorId}`;
+    const roomId = `room-${patientUserId}-doc-${resolvedDoctorId}`;
     const u = doctor.user;
     const first = (u.firstName ?? '').trim();
     const last = (u.lastName ?? '').trim();
@@ -235,13 +228,37 @@ export class ChatPatientContactsService {
     return {
       id: roomId,
       patientId: patientProfile.id,
-      doctorId: doctor.id,
+      doctorId: resolvedDoctorId,
       doctor: {
-        id: doctor.id,
+        id: resolvedDoctorId,
         name,
         avatarUrl: u.avatarUrl ?? null,
         userId: u.id,
       },
     };
+  }
+
+  /** Accepts DoctorProfile.id or, as fallback, the doctor's User.id. */
+  private async resolveDoctorProfile(idOrUserId: string) {
+    const key = idOrUserId.trim();
+    const select = {
+      id: true,
+      user: { select: USER_PUBLIC_SELECT },
+    } as const;
+
+    let doctor = await this.prisma.doctorProfile.findUnique({
+      where: { id: key },
+      select,
+    });
+    if (!doctor) {
+      doctor = await this.prisma.doctorProfile.findUnique({
+        where: { userId: key },
+        select,
+      });
+    }
+    if (!doctor) {
+      throw new NotFoundException('Эмч олдсонгүй.');
+    }
+    return doctor;
   }
 }

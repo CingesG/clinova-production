@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:diplom_app/l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +9,7 @@ import '../../../core/localization/context_l10n.dart';
 import '../../../core/media/doctor_avatar_mapper.dart';
 import '../../../core/navigation/go_router_pop.dart';
 import '../../../core/network/clinova_api.dart';
+import '../../../core/network/realtime_service.dart';
 import '../doctor_chat_route.dart';
 import '../services/doctor_chat_start_service.dart';
 import '../../../core/network/online_presence_provider.dart';
@@ -24,18 +27,57 @@ class DoctorChatLandingScreen extends ConsumerStatefulWidget {
       _DoctorChatLandingScreenState();
 }
 
-class _DoctorChatLandingScreenState
-    extends ConsumerState<DoctorChatLandingScreen> {
+class _DoctorChatLandingScreenState extends ConsumerState<DoctorChatLandingScreen>
+    with WidgetsBindingObserver {
   late Future<List<Map<String, dynamic>>> _doctorsFuture;
-  var _futureReady = false;
+  var _listenersReady = false;
+  StreamSubscription<Map<String, dynamic>>? _doctorsChangedSub;
   final GlobalKey _doctorDirectoryKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _doctorsFuture = Future.value(const []);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    unawaited(_doctorsChangedSub?.cancel());
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshDoctors();
+    }
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_futureReady) return;
-    _futureReady = true;
-    _doctorsFuture = ref.read(clinovaApiProvider).getDoctors();
+    if (_listenersReady) return;
+    _listenersReady = true;
+    _doctorsChangedSub =
+        ref.read(realtimeServiceProvider).doctorsChangedStream.listen((event) {
+      final evt = event['event']?.toString() ?? '';
+      if (evt == 'doctor.created' ||
+          evt == 'doctor.updated' ||
+          evt == 'doctor.statusChanged' ||
+          evt == 'doctor.deleted') {
+        _refreshDoctors();
+      }
+    });
+    _refreshDoctors();
+  }
+
+  void _refreshDoctors() {
+    if (!mounted) return;
+    setState(() {
+      _doctorsFuture = ref.read(clinovaApiProvider).getActiveDoctors();
+    });
   }
 
   int _countOnline(
@@ -77,10 +119,15 @@ class _DoctorChatLandingScreenState
                   child: FutureBuilder<List<Map<String, dynamic>>>(
                     future: _doctorsFuture,
                     builder: (context, snapshot) {
-                      final doctors = snapshot.data ?? const [];
-                      final onlineN = _countOnline(doctors, onlineIds);
                       final loading = snapshot.connectionState ==
                           ConnectionState.waiting;
+                      final doctors = snapshot.hasError
+                          ? const <Map<String, dynamic>>[]
+                          : (snapshot.data ?? const []);
+                      final onlineN = _countOnline(doctors, onlineIds);
+                      final loadError = snapshot.hasError
+                          ? snapshot.error
+                          : null;
 
                       Widget body() {
                         if (wide) {
@@ -111,6 +158,8 @@ class _DoctorChatLandingScreenState
                                   doctors: doctors,
                                   onlineIds: onlineIds,
                                   loading: loading,
+                                  loadError: loadError,
+                                  onRetry: _refreshDoctors,
                                   doctorDirectoryKey: _doctorDirectoryKey,
                                 ),
                               ),
@@ -139,6 +188,8 @@ class _DoctorChatLandingScreenState
                               doctors: doctors,
                               onlineIds: onlineIds,
                               loading: loading,
+                              loadError: loadError,
+                              onRetry: _refreshDoctors,
                               doctorDirectoryKey: _doctorDirectoryKey,
                             ),
                           ],
@@ -452,6 +503,8 @@ class _LandingRightPanel extends ConsumerWidget {
     required this.doctors,
     required this.onlineIds,
     required this.loading,
+    this.loadError,
+    required this.onRetry,
     required this.doctorDirectoryKey,
   });
 
@@ -462,12 +515,13 @@ class _LandingRightPanel extends ConsumerWidget {
   final List<Map<String, dynamic>> doctors;
   final Set<String> onlineIds;
   final bool loading;
+  final Object? loadError;
+  final VoidCallback onRetry;
   final GlobalKey doctorDirectoryKey;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isMn = l10n.localeName.toLowerCase().startsWith('mn');
-    final preview = doctors.length > 9 ? doctors.sublist(0, 9) : doctors;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -585,7 +639,35 @@ class _LandingRightPanel extends ConsumerWidget {
                   child: CircularProgressIndicator(),
                 ),
               )
-            else if (preview.isEmpty)
+            else if (loadError != null)
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF7ED),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFFED7AA)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      isMn
+                          ? 'Эмчийн жагсаалт ачаалахад алдаа гарлаа.'
+                          : 'Could not load doctors.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: const Color(0xFF9A3412),
+                        height: 1.35,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    OutlinedButton(
+                      onPressed: onRetry,
+                      child: Text(l10n.branchesRetry),
+                    ),
+                  ],
+                ),
+              )
+            else if (doctors.isEmpty)
               Container(
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
@@ -594,7 +676,9 @@ class _LandingRightPanel extends ConsumerWidget {
                   border: Border.all(color: const Color(0xFFE2E8F0)),
                 ),
                 child: Text(
-                  l10n.homeStaffEmpty,
+                  isMn
+                      ? 'Одоогоор идэвхтэй эмч алга байна.'
+                      : 'No active doctors at the moment.',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -615,23 +699,30 @@ class _LandingRightPanel extends ConsumerWidget {
                       mainAxisSpacing: 12,
                       mainAxisExtent: 132,
                     ),
-                    itemCount: preview.length,
+                    itemCount: doctors.length,
                     itemBuilder: (context, i) {
-                      final d = preview[i];
-                      final id = d['id']?.toString() ?? '';
+                      final d = doctors[i];
+                      final id = normalizeDoctorProfileId(d) ?? '';
                       final u = d['user'];
                       final um = u is Map<String, dynamic> ? u : null;
+                      final rawName = d['name']?.toString().trim() ?? '';
                       final name = um == null
-                          ? l10n.homeFallbackDoctor
+                          ? rawName
                           : '${um['firstName'] ?? ''} ${um['lastName'] ?? ''}'
                               .trim();
-                      final display =
-                          name.isEmpty ? l10n.homeFallbackDoctor : name;
+                      final display = (rawName.isNotEmpty
+                              ? rawName
+                              : name.isNotEmpty
+                                  ? name
+                                  : l10n.homeFallbackDoctor)
+                          .trim();
                       final initial = display.isNotEmpty
                           ? String.fromCharCode(display.runes.first).toUpperCase()
                           : '?';
-                      final dept =
-                          d['department']?['name']?.toString() ?? '';
+                      final dept = d['specialization']?.toString().trim() ??
+                          d['specialty']?.toString().trim() ??
+                          d['department']?['name']?.toString() ??
+                          '';
                       final uid = um?['id']?.toString();
                       final online = uid != null && onlineIds.contains(uid);
                       final rating = d['avgRating'] ?? d['rating'];

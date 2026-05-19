@@ -347,6 +347,13 @@ class ClinovaApi {
     return _asList(_asMap(response.data)['items']);
   }
 
+  /// Patient «Эмчтэй чат» directory — active doctors only (`GET /doctors/active`).
+  Future<List<Map<String, dynamic>>> getActiveDoctors() async {
+    final response = await _dio.get('/doctors/active');
+    final list = _normalizeTopLevelList(response.data);
+    return list.map(_withAbsoluteDoctorAvatar).toList();
+  }
+
   Future<List<Map<String, dynamic>>> getDoctors({
     String? branchId,
     String? departmentId,

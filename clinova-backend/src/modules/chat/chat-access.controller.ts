@@ -47,7 +47,11 @@ export class ChatAccessController {
     @CurrentUser() user: CurrentUserPayload,
     @Body() body: StartConversationDto,
   ) {
-    return this.contacts.startDoctorConversation(user.sub, body.doctorId.trim());
+    const doctorId = String(body?.doctorId ?? '').trim();
+    if (!doctorId) {
+      throw new BadRequestException('doctorId is required.');
+    }
+    return this.contacts.startDoctorConversation(user.sub, doctorId);
   }
 
   @Post('permission-flags')
