@@ -10,10 +10,10 @@
       "has": [
         {
           "type": "host",
-          "value": "www.clinova.uk"
+          "value": "clinova.uk"
         }
       ],
-      "destination": "https://clinova.uk/:path*",
+      "destination": "https://www.clinova.uk/:path*",
       "permanent": true
     }
   ],

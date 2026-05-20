@@ -14,8 +14,8 @@ export function strictProductionBrowserCors(): boolean {
   return process.env.ALLOW_LEGACY_DEV_CORS !== 'true';
 }
 
-/** Production canonical frontend (www.clinova.uk redirects to apex before API calls). */
-const CLINOVA_PRODUCTION_BROWSER_ORIGINS = ['https://clinova.uk'] as const;
+/** Production canonical frontend: https://www.clinova.uk (apex redirects via Vercel). */
+const CLINOVA_PRODUCTION_BROWSER_ORIGINS = ['https://www.clinova.uk'] as const;
 
 /** FRONTEND_URL + CORS_ORIGIN (товхоолсон) жагсаалт */
 export function resolveBrowserOriginAllowlist(): string[] {

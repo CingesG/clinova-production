@@ -1,17 +1,7 @@
 <!DOCTYPE html>
 <html lang="mn">
 <head>
-  <!-- Canonical host: apex only. www shares no storage with clinova.uk (separate origins). -->
-  <script>
-    (function () {
-      var host = window.location.hostname;
-      if (host === 'www.clinova.uk') {
-        var loc = window.location;
-        var target = 'https://clinova.uk' + loc.pathname + loc.search + loc.hash;
-        window.location.replace(target);
-      }
-    })();
-  </script>
+  <!-- Canonical host is https://www.clinova.uk (Vercel redirects apex → www). Do not redirect www → apex here. -->
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
@@ -28,8 +18,8 @@
   <meta name="google-signin-client_id" content="__GOOGLE_SIGNIN_CLIENT_ID__">
 
   <!-- CLINOVA_SEO_INJECT_BEGIN -->
-  <link rel="canonical" href="https://clinova.uk/" />
-  <meta property="og:url" content="https://clinova.uk/" />
+  <link rel="canonical" href="https://www.clinova.uk/" />
+  <meta property="og:url" content="https://www.clinova.uk/" />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Clinova — Smart AI healthcare &amp; appointments" />
   <meta property="og:description" content="Clinova — smart AI healthcare appointments, realtime chat, and patient management." />
