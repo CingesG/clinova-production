@@ -10,10 +10,9 @@ import '../../features/settings/presentation/language_controller.dart';
 import '../widgets/premium_healthcare_shell.dart';
 import 'pwa_install.dart';
 
-/// Web-only install prompt: Chromium [beforeinstallprompt] (suppressed in index.html).
+/// Bottom PWA install strip (Chrome [beforeinstallprompt] wired in web/index.html).
 ///
-/// Rendered as a small bottom [Positioned] strip in [ClinovaApp] — never as a full-screen
-/// layer — so the rest of the page stays clickable (see app.dart).
+/// Uses [GestureDetector] for close (no [IconButton] splash / huge hover overlay).
 class ClinovaWebInstallBar extends ConsumerStatefulWidget {
   const ClinovaWebInstallBar({super.key});
 
@@ -25,8 +24,9 @@ class ClinovaWebInstallBar extends ConsumerStatefulWidget {
 class _ClinovaWebInstallBarState extends ConsumerState<ClinovaWebInstallBar> {
   StreamSubscription<void>? _sub;
   StreamSubscription<void>? _installedSub;
-  Timer? _autoDismissTimer;
+  Timer? _fallbackTimer;
   bool _installPromptReady = false;
+  bool _fallbackVisible = false;
   bool _sessionDismissed = false;
   bool _streamsAttached = false;
 
@@ -47,53 +47,64 @@ class _ClinovaWebInstallBarState extends ConsumerState<ClinovaWebInstallBar> {
       if (mounted) setState(() => _sessionDismissed = true);
       return;
     }
-    final prefs = ref.read(sharedPreferencesProvider);
-    if (prefs.getBool(kClinovaPwaInstallDismissedKey) ?? false) {
+    if (pwaIsPwaMarkedInstalledInBrowserStorage()) {
       if (mounted) setState(() => _sessionDismissed = true);
       return;
     }
+    final prefs = ref.read(sharedPreferencesProvider);
+    if (pwaIsInstallBannerDismissedInBrowserStorage() ||
+        (prefs.getBool(kClinovaPwaInstallDismissedKey) ?? false)) {
+      try {
+        await prefs.setBool(kClinovaPwaInstallDismissedKey, true);
+      } catch (_) {}
+      pwaDismissInstallBannerInBrowserStorage();
+      if (mounted) setState(() => _sessionDismissed = true);
+      return;
+    }
+
     _attachStreams();
-    if (_deferredReady()) {
+
+    if (pwaIsDeferredInstallPromptAvailable()) {
       if (mounted) {
         setState(() => _installPromptReady = true);
-        _startAutoDismissTimer();
       }
+    } else {
+      _fallbackTimer?.cancel();
+      _fallbackTimer = Timer(const Duration(seconds: 5), () {
+        if (!mounted || _sessionDismissed) return;
+        setState(() => _fallbackVisible = true);
+      });
     }
   }
 
   void _attachStreams() {
     if (_streamsAttached) return;
     _streamsAttached = true;
+
     _installedSub = pwaAppInstalledStream().listen((_) {
       unawaited(_rememberDismissal());
     });
+
     _sub = pwaInstallPromptAvailableStream().listen((_) {
       if (!mounted) return;
       if (pwaIsWebStandalone()) {
         unawaited(_rememberDismissal());
         return;
       }
-      if (_deferredReady()) {
-        setState(() => _installPromptReady = true);
-        _startAutoDismissTimer();
+      if (pwaIsDeferredInstallPromptAvailable()) {
+        _fallbackTimer?.cancel();
+        setState(() {
+          _installPromptReady = true;
+          _fallbackVisible = true;
+        });
       }
     });
   }
 
-  bool _deferredReady() => pwaIsDeferredInstallPromptAvailable();
-
-  void _startAutoDismissTimer() {
-    if (!mounted || _sessionDismissed || !_installPromptReady) return;
-    _autoDismissTimer?.cancel();
-    _autoDismissTimer = Timer(const Duration(seconds: 30), () {
-      if (!mounted) return;
-      unawaited(_rememberDismissal());
-    });
-  }
-
   Future<void> _rememberDismissal() async {
-    _autoDismissTimer?.cancel();
-    _autoDismissTimer = null;
+    _fallbackTimer?.cancel();
+    _fallbackTimer = null;
+    pwaDismissInstallBannerInBrowserStorage();
     try {
       await ref
           .read(sharedPreferencesProvider)
@@ -104,7 +115,7 @@ class _ClinovaWebInstallBarState extends ConsumerState<ClinovaWebInstallBar> {
 
   @override
   void dispose() {
-    _autoDismissTimer?.cancel();
+    _fallbackTimer?.cancel();
     _sub?.cancel();
     _installedSub?.cancel();
     super.dispose();
@@ -132,12 +143,37 @@ class _ClinovaWebInstallBarState extends ConsumerState<ClinovaWebInstallBar> {
   }
 
   Future<void> _onInstallTap() async {
+    if (!pwaIsDeferredInstallPromptAvailable()) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            pwaFallbackInstallSnackMessage().isNotEmpty
+                ? pwaFallbackInstallSnackMessage()
+                : 'Chrome-ийн address bar эсвэл menu дээрх Install icon-оор суулгана уу.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
     final ok = await pwaPromptInstall();
     if (!mounted) return;
     if (ok || pwaIsWebStandalone()) {
       await _rememberDismissal();
     } else {
-      setState(() => _installPromptReady = _deferredReady());
+      setState(() {
+        _installPromptReady = pwaIsDeferredInstallPromptAvailable();
+      });
+      if (!_installPromptReady && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(pwaFallbackInstallSnackMessage()),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
 
@@ -147,7 +183,7 @@ class _ClinovaWebInstallBarState extends ConsumerState<ClinovaWebInstallBar> {
       return const SizedBox.shrink();
     }
 
-    if (!_installPromptReady) {
+    if (!_installPromptReady && !_fallbackVisible) {
       return const SizedBox.shrink();
     }
 
@@ -165,7 +201,7 @@ class _ClinovaWebInstallBarState extends ConsumerState<ClinovaWebInstallBar> {
         top: false,
         minimum: EdgeInsets.zero,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
+          padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -185,23 +221,44 @@ class _ClinovaWebInstallBarState extends ConsumerState<ClinovaWebInstallBar> {
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.only(right: 4),
-                      child: Text(
-                        'Энэхүү төхөөрөмж дээр Clinova-г апп шиг ашиглах бол доорх товчийг дарна уу.',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              height: 1.35,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Энэхүү төхөөрөмж дээр Clinova-г апп шиг ашиглах бол доорх товчийг дарна уу.',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(height: 1.35),
+                          ),
+                          if (!_installPromptReady && _fallbackVisible) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              'Chrome-ийн address bar эсвэл menu дээрх Install Clinova.'
+                              ' Эсвэл «Заавар» дарна уу.',
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(
+                                    color: scheme.onSurfaceVariant,
+                                    height: 1.3,
+                                  ),
                             ),
+                          ],
+                        ],
                       ),
                     ),
                   ),
-                  IconButton(
-                    tooltip: 'Хаах',
-                    onPressed: () => unawaited(_rememberDismissal()),
-                    style: IconButton.styleFrom(
-                      minimumSize: const Size(48, 48),
-                      padding: const EdgeInsets.all(8),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  Tooltip(
+                    message: 'Хаах',
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => unawaited(_rememberDismissal()),
+                      child: Padding(
+                        padding: const EdgeInsets.all(6),
+                        child: Icon(
+                          Icons.close_rounded,
+                          size: 20,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
                     ),
-                    icon: Icon(Icons.close_rounded, size: 22, color: scheme.onSurfaceVariant),
                   ),
                 ],
               ),

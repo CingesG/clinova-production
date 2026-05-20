@@ -227,27 +227,60 @@
       }
     })();
 
-    window.deferredInstallPrompt = null;
-    window.addEventListener('beforeinstallprompt', function (e) {
-      e.preventDefault();
-      window.deferredInstallPrompt = e;
-      window.dispatchEvent(new Event('clinova-pwa-install-available'));
-    });
-    window.addEventListener('appinstalled', function () {
-      window.deferredInstallPrompt = null;
-      window.dispatchEvent(new Event('clinova-pwa-installed'));
-    });
-    window.clinovaPromptInstall = async function () {
-      if (!window.deferredInstallPrompt) return false;
-      window.deferredInstallPrompt.prompt();
-      var result = await window.deferredInstallPrompt.userChoice;
-      window.deferredInstallPrompt = null;
-      return result.outcome === 'accepted';
-    };
-    window.clinovaIsStandalone = function () {
-      return window.matchMedia('(display-mode: standalone)').matches ||
-        window.navigator.standalone === true;
-    };
+    (function () {
+      var deferredInstallPrompt = null;
+
+      window.addEventListener('beforeinstallprompt', function (event) {
+        event.preventDefault();
+        deferredInstallPrompt = event;
+        window.deferredInstallPrompt = event;
+        window.clinovaDeferredInstallPrompt = event;
+        window.dispatchEvent(new Event('clinova-pwa-install-available'));
+        window.dispatchEvent(new CustomEvent('clinova-install-available'));
+      });
+
+      window.addEventListener('appinstalled', function () {
+        deferredInstallPrompt = null;
+        window.deferredInstallPrompt = null;
+        window.clinovaDeferredInstallPrompt = null;
+        try {
+          localStorage.setItem('clinova_pwa_installed', 'true');
+        } catch (e1) {}
+        window.dispatchEvent(new Event('clinova-pwa-installed'));
+        window.dispatchEvent(new CustomEvent('clinova-app-installed'));
+      });
+
+      window.clinovaPromptInstall = async function () {
+        var promptEvent = deferredInstallPrompt ||
+          window.clinovaDeferredInstallPrompt ||
+          window.deferredInstallPrompt;
+        if (!promptEvent) {
+          window.dispatchEvent(new CustomEvent('clinova-install-unavailable'));
+          return false;
+        }
+        promptEvent.prompt();
+        var choice = await promptEvent.userChoice;
+        deferredInstallPrompt = null;
+        window.deferredInstallPrompt = null;
+        window.clinovaDeferredInstallPrompt = null;
+        try {
+          window.dispatchEvent(new CustomEvent('clinova-install-complete', { detail: choice }));
+        } catch (e2) {}
+        return choice && choice.outcome === 'accepted';
+      };
+
+      window.clinovaDismissInstallBanner = function () {
+        try {
+          localStorage.setItem('clinova_install_banner_dismissed', 'true');
+        } catch (e3) {}
+      };
+
+      window.clinovaIsStandalone = function () {
+        return window.matchMedia('(display-mode: standalone)').matches ||
+          window.matchMedia('(display-mode: minimal-ui)').matches ||
+          window.navigator.standalone === true;
+      };
+    })();
   </script>
 </head>
 <body>
