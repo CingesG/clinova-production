@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:diplom_app/l10n/app_localizations.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -251,7 +253,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         api.getDepartments(),
         api.getBranches(),
         api.getDoctors(),
-      ]);
+      ]).timeout(
+        const Duration(seconds: 12),
+        onTimeout: () {
+          throw TimeoutException('Home data load timed out');
+        },
+      );
       Map<String, Map<String, dynamic>> flags = {};
       if (isAuthed && role == 'PATIENT' && base.length > 4) {
         final doctorsList = base[4] as List<Map<String, dynamic>>;

@@ -46,5 +46,11 @@ for key in FIREBASE_WEB_API_KEY FIREBASE_WEB_AUTH_DOMAIN FIREBASE_WEB_PROJECT_ID
   [[ -z "$v" ]] || DEFINES+=(--dart-define="${key}=${v}")
 done
 
-flutter build web --release "${DEFINES[@]}"
-echo "Build complete: build/web (PWA: manifest, icons, flutter_service_worker.js)."
+# PWA strategy none: avoid stale service-worker JS after deploy (see index.html version.json).
+flutter build web --release --pwa-strategy=none "${DEFINES[@]}"
+
+# Cache-bust marker for optional SW cleanup in index.html (when SW enabled later).
+BUILD_ID="$(date -u +%Y%m%d%H%M%S)-$(git rev-parse --short HEAD 2>/dev/null || echo local)"
+echo "{\"version\":\"${BUILD_ID}\"}" > build/web/version.json
+
+echo "Build complete: build/web (PWA strategy: none; CanvasKit bundled on origin)."

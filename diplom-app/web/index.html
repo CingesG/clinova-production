@@ -1,19 +1,17 @@
 <!DOCTYPE html>
 <html lang="mn">
 <head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
+  <!-- Canonical host: apex only. www shares no storage with clinova.uk (separate origins). -->
+  <script>
+    (function () {
+      var host = window.location.hostname;
+      if (host === 'www.clinova.uk') {
+        var loc = window.location;
+        var target = 'https://clinova.uk' + loc.pathname + loc.search + loc.hash;
+        window.location.replace(target);
+      }
+    })();
+  </script>
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
@@ -27,41 +25,134 @@
   <meta name="keywords" content="Clinova, clinic, Mongolia, dentist, appointment, telehealth, AI healthcare">
   <meta name="robots" content="index, follow">
   <meta name="theme-color" content="#2563EB">
-  <!-- Vercel / release билдэд tool/* скрипт __GOOGLE_SIGNIN_CLIENT_ID__-ийг $GOOGLE_CLIENT_ID-аар солиж орлуулна. -->
   <meta name="google-signin-client_id" content="__GOOGLE_SIGNIN_CLIENT_ID__">
 
-  <!-- Билдэд tool/render_seo_assets.sh — canonical, og:url автоматаар -->
   <!-- CLINOVA_SEO_INJECT_BEGIN -->
-  <link rel="canonical" href="https://clinova-production.vercel.app/" />
-  <meta property="og:url" content="https://clinova-production.vercel.app/" />
+  <link rel="canonical" href="https://clinova.uk/" />
+  <meta property="og:url" content="https://clinova.uk/" />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Clinova — Smart AI healthcare &amp; appointments" />
   <meta property="og:description" content="Clinova — smart AI healthcare appointments, realtime chat, and patient management." />
   <meta name="twitter:card" content="summary_large_image" />
   <!-- CLINOVA_SEO_INJECT_END -->
 
-  <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Clinova">
   <meta name="application-name" content="Clinova">
   <link rel="apple-touch-icon" sizes="192x192" href="icons/Icon-192.png">
-
   <link rel="icon" type="image/png" href="favicon.png"/>
-
   <link rel="manifest" href="manifest.json">
 
-  <!-- Full-viewport Flutter host; content width clamp is Dart-only (app.dart). Do NOT max-width flutter-view here — breaks absolute layout. -->
   <style>
     html, body {
       width: 100%;
       min-height: 100vh;
       margin: 0;
       overflow-x: hidden;
-      overflow-y: auto;
+      background: #f8fbff;
+      color: #101828;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    /* Branded loader — visible until Flutter first frame (or error). */
+    #clinova-startup-loader {
+      position: fixed;
+      inset: 0;
+      z-index: 99999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(165deg, #f8fbff 0%, #eef4ff 48%, #f8fbff 100%);
+      transition: opacity 0.35s ease, visibility 0.35s ease;
+    }
+    #clinova-startup-loader.clinova-hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+    #clinova-startup-loader .logo-wrap {
+      width: 112px;
+      height: 112px;
+      padding: 20px;
+      border-radius: 32px;
+      background: rgba(255, 255, 255, 0.94);
+      border: 1px solid rgba(255, 255, 255, 0.9);
+      box-shadow: 0 16px 28px rgba(15, 23, 42, 0.07);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #clinova-startup-loader img {
+      width: 72px;
+      height: 72px;
+      object-fit: contain;
+    }
+    #clinova-startup-loader h1 {
+      margin: 28px 0 8px;
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    #clinova-startup-loader p {
+      margin: 0;
+      color: #667085;
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+    #clinova-startup-loader .spinner {
+      margin-top: 24px;
+      width: 28px;
+      height: 28px;
+      border: 2.5px solid #e4e7ec;
+      border-top-color: #2563eb;
+      border-radius: 50%;
+      animation: clinova-spin 0.85s linear infinite;
+    }
+    @keyframes clinova-spin {
+      to { transform: rotate(360deg); }
+    }
+
+    #clinova-startup-error {
+      position: fixed;
+      inset: 0;
+      z-index: 100000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 32px;
+      text-align: center;
       background: #f8fbff;
     }
+    #clinova-startup-error[hidden] {
+      display: none !important;
+    }
+    #clinova-startup-error h2 {
+      margin: 0 0 12px;
+      font-size: 1.15rem;
+    }
+    #clinova-startup-error p {
+      margin: 0 0 24px;
+      color: #667085;
+      max-width: 360px;
+    }
+    #clinova-startup-error button {
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      padding: 12px 24px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    #clinova-startup-error button:hover {
+      background: #1d4ed8;
+    }
+
     flutter-view,
     flt-glass-pane,
     #flt-glass-pane {
@@ -77,6 +168,75 @@
   </style>
 
   <script>
+    (function () {
+      var LOADER_TIMEOUT_MS = 45000;
+      var loaderHidden = false;
+
+      function hideLoader() {
+        if (loaderHidden) return;
+        loaderHidden = true;
+        var el = document.getElementById('clinova-startup-loader');
+        if (el) {
+          el.classList.add('clinova-hidden');
+          setTimeout(function () {
+            if (el.parentNode) el.parentNode.removeChild(el);
+          }, 400);
+        }
+      }
+
+      function showBootstrapError() {
+        hideLoader();
+        var err = document.getElementById('clinova-startup-error');
+        if (err) err.hidden = false;
+      }
+
+      window.addEventListener('flutter-first-frame', hideLoader);
+
+      window.addEventListener('load', function () {
+        setTimeout(function () {
+          if (!loaderHidden) {
+            showBootstrapError();
+          }
+        }, LOADER_TIMEOUT_MS);
+      });
+
+      window.clinovaFlutterLoadFailed = function () {
+        showBootstrapError();
+      };
+
+      window.clinovaReloadApp = function () {
+        window.location.reload();
+      };
+
+      // After deploy: unregister stale SW when version.json changes (see post-build script).
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+          fetch('version.json', { cache: 'no-store' })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (v) {
+              if (!v || !v.version) return;
+              var key = 'clinova_sw_version';
+              var prev = localStorage.getItem(key);
+              if (prev && prev !== v.version) {
+                navigator.serviceWorker.getRegistrations().then(function (regs) {
+                  regs.forEach(function (r) { r.unregister(); });
+                });
+                if ('caches' in window) {
+                  caches.keys().then(function (names) {
+                    names.forEach(function (n) { caches.delete(n); });
+                  });
+                }
+              }
+              localStorage.setItem(key, v.version);
+            })
+            .catch(function () {});
+          navigator.serviceWorker.getRegistrations().then(function (regs) {
+            regs.forEach(function (r) { r.update(); });
+          });
+        });
+      }
+    })();
+
     window.deferredInstallPrompt = null;
     window.addEventListener('beforeinstallprompt', function (e) {
       e.preventDefault();
@@ -101,14 +261,21 @@
   </script>
 </head>
 <body>
-  <!--
-    You can customize the "flutter_bootstrap.js" script.
-    This is useful to provide a custom configuration to the Flutter loader
-    or to give the user feedback during the initialization process.
+  <div id="clinova-startup-loader" aria-live="polite" aria-busy="true">
+    <div class="logo-wrap">
+      <img src="icons/Icon-192.png" width="72" height="72" alt="Clinova" />
+    </div>
+    <h1>Clinova</h1>
+    <p>Уншиж байна…</p>
+    <div class="spinner" role="progressbar" aria-label="Loading"></div>
+  </div>
 
-    For more details:
-    * https://docs.flutter.dev/platform-integration/web/initialization
-  -->
+  <div id="clinova-startup-error" hidden>
+    <h2>Clinova ачааллахад алдаа гарлаа</h2>
+    <p>Интернет холболтоо шалгаад дахин оролдоно уу. Хуудас хэт удаан ачаалагдвал cache цэвэрлээд дахин нээнэ үү.</p>
+    <button type="button" onclick="window.clinovaReloadApp()">Дахин ачаалах</button>
+  </div>
+
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

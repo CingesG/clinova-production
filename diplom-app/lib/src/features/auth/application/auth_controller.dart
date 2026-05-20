@@ -1,12 +1,17 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:diplom_app/l10n/app_localizations.dart';
 import 'package:diplom_app/l10n/app_localizations_en.dart';
 import 'package:diplom_app/l10n/app_localizations_mn.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/auth/auth_debug_log.dart';
 import '../../../core/network/clinova_api.dart';
 import '../../../core/network/token_refresh.dart';
 import '../../../core/storage/token_storage.dart';
+import '../../../core/storage/web_token_migration.dart';
+import 'package:flutter/foundation.dart';
 import '../../settings/presentation/language_controller.dart';
 import '../domain/app_user.dart';
 
@@ -33,11 +38,14 @@ class AuthState {
     this.debugCode,
     this.errorMessage,
     this.isBusy = false,
+    this.sessionRestorePending = false,
   });
 
   final AuthStage stage;
   final AppUser? user;
   final String? token;
+  /// Web: stay on splash while reading storage / calling /auth/me (UI paints first).
+  final bool sessionRestorePending;
   final String? pendingEmail;
   final String? pendingFirstName;
   final String? pendingLastName;
@@ -64,6 +72,7 @@ class AuthState {
     String? debugCode,
     String? errorMessage,
     bool? isBusy,
+    bool? sessionRestorePending,
     bool clearUser = false,
     bool clearToken = false,
     bool clearPendingEmail = false,
@@ -93,12 +102,24 @@ class AuthState {
       debugCode: clearDebugCode ? null : debugCode ?? this.debugCode,
       errorMessage: clearError ? null : errorMessage ?? this.errorMessage,
       isBusy: isBusy ?? this.isBusy,
+      sessionRestorePending:
+          sessionRestorePending ?? this.sessionRestorePending,
     );
   }
 
   factory AuthState.initial() {
+    if (kIsWeb) {
+      return const AuthState(
+        stage: AuthStage.signedOut,
+        sessionRestorePending: true,
+      );
+    }
     return const AuthState(stage: AuthStage.bootstrapping);
   }
+
+  /// Router keeps user on [/splash] while session is restored (non-blocking UI).
+  bool get holdsSplashDuringStartup =>
+      isBootstrapping || sessionRestorePending;
 }
 
 final authControllerProvider = StateNotifierProvider<AuthController, AuthState>(
@@ -114,32 +135,123 @@ class AuthController extends StateNotifier<AuthState> {
 
   final Ref _ref;
   bool _bootstrapped = false;
+  bool _resumeCheckInFlight = false;
 
-  Future<void> bootstrap() async {
-    if (_bootstrapped) return;
-    _bootstrapped = true;
+  static const _bootstrapTimeout = Duration(seconds: 10);
+  static const _apiCallTimeout = Duration(seconds: 9);
+  static const _storageReadTimeout = Duration(seconds: 5);
 
-    final storage = _ref.read(tokenStorageProvider);
-    final token = await storage.readToken();
-    if (token == null || token.isEmpty) {
-      state = state.copyWith(
-        stage: AuthStage.signedOut,
-        clearToken: true,
-        clearUser: true,
-        clearPendingEmail: true,
-        clearPendingRegisterNames: true,
-        clearPendingPasswordForOtp: true,
-        clearOtpIntent: true,
-        clearDebugCode: true,
-        clearError: true,
+  void _setSignedOut() {
+    state = state.copyWith(
+      stage: AuthStage.signedOut,
+      isBusy: false,
+      clearToken: true,
+      clearUser: true,
+      clearPendingEmail: true,
+      clearPendingRegisterNames: true,
+      clearPendingPasswordForOtp: true,
+      clearOtpIntent: true,
+      clearDebugCode: true,
+      clearError: true,
+    );
+  }
+
+  Future<void> _safeClearStorage(TokenStorage storage) async {
+    try {
+      await storage.clearAll().timeout(
+        _storageReadTimeout,
+        onTimeout: () {},
       );
+    } catch (_) {}
+  }
+
+  bool _isValidUserPayload(Map<String, dynamic>? json) {
+    if (json == null) return false;
+    final id = json['id']?.toString().trim() ?? '';
+    return id.isNotEmpty;
+  }
+
+  /// Guarantees startup never ends on [AuthStage.bootstrapping] or stuck [isBusy].
+  void _ensureBootstrapResolved() {
+    if (state.stage == AuthStage.bootstrapping) {
+      authDebugLog('bootstrap guard: still bootstrapping -> signedOut');
+      _setSignedOut();
       return;
     }
+    if (state.stage == AuthStage.signedIn &&
+        (state.user == null ||
+            state.user!.id.isEmpty ||
+            state.token == null ||
+            state.token!.isEmpty)) {
+      authDebugLog('bootstrap guard: incomplete signedIn -> signedOut');
+      _setSignedOut();
+      return;
+    }
+    if (state.isBusy) {
+      state = state.copyWith(isBusy: false);
+    }
+  }
 
-    state = state.copyWith(token: token, isBusy: true, clearError: true);
-
+  Future<String?> _readAccessToken(TokenStorage storage) async {
     try {
-      final userJson = await _ref.read(clinovaApiProvider).me();
+      return await storage
+          .readToken()
+          .timeout(_storageReadTimeout, onTimeout: () => null);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> _fetchMe() async {
+    try {
+      return await _ref
+          .read(clinovaApiProvider)
+          .me()
+          .timeout(_apiCallTimeout);
+    } on TimeoutException {
+      authDebugLog('/auth/me timeout');
+      return null;
+    } on DioException catch (e) {
+      final code = e.response?.statusCode;
+      if (code == 401) {
+        authDebugLog('/auth/me 401');
+      } else {
+        authDebugLog('/auth/me ${code ?? e.type}');
+      }
+      return null;
+    } catch (_) {
+      authDebugLog('/auth/me failed');
+      return null;
+    }
+  }
+
+  Future<bool> _tryRefreshSession(TokenStorage storage) async {
+    authDebugLog('refresh started');
+    try {
+      final ok = await refreshClinovaTokensCoordinated(storage)
+          .timeout(_bootstrapTimeout, onTimeout: () => false);
+      if (ok) {
+        authDebugLog('refresh success');
+      } else {
+        authDebugLog('refresh failed');
+      }
+      return ok;
+    } catch (_) {
+      authDebugLog('refresh failed');
+      return false;
+    }
+  }
+
+  /// Returns true when session is [AuthStage.signedIn].
+  Future<bool> _applySignedIn(
+    String token,
+    Map<String, dynamic> userJson,
+    TokenStorage storage,
+  ) async {
+    try {
+      if (token.isEmpty || !_isValidUserPayload(userJson)) {
+        throw const FormatException('Invalid session payload');
+      }
       state = state.copyWith(
         stage: AuthStage.signedIn,
         token: token,
@@ -152,51 +264,147 @@ class AuthController extends StateNotifier<AuthState> {
         clearDebugCode: true,
         clearError: true,
       );
-    } catch (_) {
-      final rotated = await refreshClinovaTokensCoordinated(storage);
-      if (rotated) {
-        final newAccess = await storage.readToken() ?? '';
-        if (newAccess.isNotEmpty) {
-          state = state.copyWith(token: newAccess);
-          try {
-            final userJson = await _ref.read(clinovaApiProvider).me();
-            state = state.copyWith(
-              stage: AuthStage.signedIn,
-              token: newAccess,
-              user: AppUser.fromJson(userJson),
-              isBusy: false,
-              clearPendingEmail: true,
-              clearPendingRegisterNames: true,
-              clearPendingPasswordForOtp: true,
-              clearOtpIntent: true,
-              clearDebugCode: true,
-              clearError: true,
-            );
-            return;
-          } catch (_) {}
+      authDebugLog('auth state changed -> signedIn');
+      return true;
+    } catch (e) {
+      authDebugLog('signedIn apply failed: $e');
+      await _safeClearStorage(storage);
+      _setSignedOut();
+      return false;
+    }
+  }
+
+  Future<void> _restoreSessionFromToken(
+    String token,
+    TokenStorage storage,
+  ) async {
+    try {
+      var access = token;
+      var userJson = await _fetchMe();
+      if (userJson != null && _isValidUserPayload(userJson)) {
+        authDebugLog('/auth/me success');
+        if (await _applySignedIn(access, userJson, storage)) return;
+      }
+
+      authDebugLog('/auth/me failed — trying refresh once');
+      final refreshed = await _tryRefreshSession(storage);
+      if (refreshed) {
+        access = await _readAccessToken(storage) ?? '';
+        if (access.isNotEmpty) {
+          userJson = await _fetchMe();
+          if (userJson != null && _isValidUserPayload(userJson)) {
+            authDebugLog('/auth/me success after refresh');
+            if (await _applySignedIn(access, userJson, storage)) return;
+          }
         }
       }
-      await storage.clearAll();
-      state = state.copyWith(
-        stage: AuthStage.signedOut,
-        isBusy: false,
-        clearToken: true,
-        clearUser: true,
-        clearPendingEmail: true,
-        clearPendingRegisterNames: true,
-        clearPendingPasswordForOtp: true,
-        clearOtpIntent: true,
-        clearDebugCode: true,
-        clearError: true,
+
+      await _safeClearStorage(storage);
+      _setSignedOut();
+      authDebugLog('auth state changed -> signedOut (session invalid)');
+    } catch (e) {
+      authDebugLog('restoreSessionFromToken error: $e');
+      await _safeClearStorage(storage);
+      _setSignedOut();
+    }
+  }
+
+  Future<void> bootstrap() async {
+    if (_bootstrapped) return;
+    _bootstrapped = true;
+    authDebugLog('auth init started');
+
+    final storage = _ref.read(tokenStorageProvider);
+
+    try {
+      await _runBootstrap(storage).timeout(
+        _bootstrapTimeout,
+        onTimeout: () {
+          authDebugLog('bootstrap timed out');
+          throw TimeoutException('Auth bootstrap timed out');
+        },
       );
+    } catch (e) {
+      authDebugLog('bootstrap error: $e');
+      await _safeClearStorage(storage);
+      _setSignedOut();
+    } finally {
+      state = state.copyWith(sessionRestorePending: false);
+      _ensureBootstrapResolved();
+      authDebugLog(
+        'bootstrap finished stage=${state.stage.name} busy=${state.isBusy}',
+      );
+    }
+  }
+
+  Future<void> _runBootstrap(TokenStorage storage) async {
+    try {
+      await migrateWebTokensFromSecureStorageIfNeeded(storage).timeout(
+        _storageReadTimeout,
+        onTimeout: () {},
+      );
+    } catch (_) {}
+
+    authDebugLog('startup auth read started');
+    final token = await _readAccessToken(storage);
+    if (token == null || token.isEmpty) {
+      authDebugLog('token missing');
+      _setSignedOut();
+      return;
+    }
+
+    authDebugLog('token found');
+    state = state.copyWith(token: token, isBusy: true, clearError: true);
+    await _restoreSessionFromToken(token, storage);
+  }
+
+  /// Tab resume: refresh once if needed; never return to [AuthStage.bootstrapping].
+  Future<void> resumeSessionCheck() async {
+    if (_resumeCheckInFlight) return;
+    if (state.stage != AuthStage.signedIn || state.token == null) return;
+
+    _resumeCheckInFlight = true;
+    final storage = _ref.read(tokenStorageProvider);
+    try {
+      final userJson = await _fetchMe();
+      if (userJson != null) {
+        state = state.copyWith(user: AppUser.fromJson(userJson));
+        return;
+      }
+      final refreshed = await _tryRefreshSession(storage);
+      if (!refreshed) {
+        await storage.clearAll();
+        _setSignedOut();
+        return;
+      }
+      final access = await _readAccessToken(storage) ?? '';
+      if (access.isEmpty) {
+        await storage.clearAll();
+        _setSignedOut();
+        return;
+      }
+      final retry = await _fetchMe();
+      if (retry != null) {
+        state = state.copyWith(
+          token: access,
+          user: AppUser.fromJson(retry),
+          stage: AuthStage.signedIn,
+        );
+      } else {
+        await storage.clearAll();
+        _setSignedOut();
+      }
+    } finally {
+      _resumeCheckInFlight = false;
     }
   }
 
   /// Keeps in-memory [AuthState.token] aligned with secure storage after a silent refresh.
   void applyRefreshedAccessToken(String accessToken) {
     if (accessToken.isEmpty) return;
-    if (state.stage != AuthStage.signedIn || state.user == null) return;
+    if (state.stage == AuthStage.signedOut) return;
     state = state.copyWith(token: accessToken);
+    authDebugLog('access token rotated in memory');
   }
 
   void prepareFreshCredentialFlow() {
@@ -216,10 +424,31 @@ class AuthController extends StateNotifier<AuthState> {
     final access = response['accessToken']?.toString() ?? '';
     final refresh = response['refreshToken']?.toString() ?? '';
     final storage = _ref.read(tokenStorageProvider);
-    if (access.isEmpty) return;
+    if (access.isEmpty) {
+      authDebugLog('auth storage write skipped — empty accessToken');
+      return;
+    }
+    authDebugLog('login success — token save started');
     await storage.saveToken(access);
     if (refresh.isNotEmpty) {
       await storage.saveRefreshToken(refresh);
+    } else {
+      authDebugLog('refreshToken missing in login response');
+    }
+    final rawUser = response['user'];
+    if (rawUser is Map) {
+      persistWebSessionUser(
+        storage,
+        Map<String, dynamic>.from(rawUser),
+      );
+    }
+    if (kIsWeb) {
+      final roundTrip = await storage.readToken();
+      if (roundTrip != access) {
+        authDebugLog(
+          'WARNING: accessToken round-trip mismatch after save',
+        );
+      }
     }
   }
 
@@ -264,6 +493,7 @@ class AuthController extends StateNotifier<AuthState> {
       return;
     }
     await _persistTokensFromResponse(response);
+    authDebugLog('password login tokens persisted');
     final user = AppUser.fromJson(
       response['user'] is Map<String, dynamic>
           ? response['user'] as Map<String, dynamic>
@@ -299,6 +529,7 @@ class AuthController extends StateNotifier<AuthState> {
       clearDebugCode: true,
       clearError: true,
     );
+    authDebugLog('auth state signedIn');
   }
 
   Future<void> passwordLogin({
@@ -770,9 +1001,10 @@ class AuthController extends StateNotifier<AuthState> {
     } catch (_) {}
   }
 
-  void handleUnauthorized() {
+  Future<void> handleUnauthorized() async {
     if (state.stage == AuthStage.signedOut) return;
-    logout();
+    authDebugLog('handleUnauthorized — clearing session');
+    await logout();
   }
 
   void dismissError() {

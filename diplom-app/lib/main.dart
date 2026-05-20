@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,10 +8,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'config/env.dart';
 import 'src/app/app.dart';
+import 'src/app/clinova_web_startup.dart';
 import 'src/features/settings/presentation/language_controller.dart';
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+Future<void> _initFirebaseOptional() async {
   try {
     if (kIsWeb && Env.firebaseWebApiKey.isNotEmpty) {
       await Firebase.initializeApp(
@@ -30,12 +32,24 @@ Future<void> main() async {
       await Firebase.initializeApp();
       debugPrint('[Auth] Firebase initialized with platform defaults');
     } else {
-      // Web дээр Firebase config байхгүй үед init алдаанаас сэргийлж алгасна.
       debugPrint('[Auth] Firebase skipped on web (missing config)');
     }
   } catch (e) {
     debugPrint('[Auth] Firebase init failed: $e');
   }
+}
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  if (kIsWeb) {
+    // Do not block first Flutter frame on Firebase or prefs.
+    unawaited(_initFirebaseOptional());
+    runApp(const ProviderScope(child: ClinovaWebStartup()));
+    return;
+  }
+
+  await _initFirebaseOptional();
   final prefs = await SharedPreferences.getInstance();
   runApp(
     ProviderScope(

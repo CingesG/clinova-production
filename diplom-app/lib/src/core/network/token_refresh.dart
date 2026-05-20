@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 
+import '../auth/auth_debug_log.dart';
 import '../config/app_config.dart';
 import '../storage/token_storage.dart';
 
@@ -25,18 +26,23 @@ Future<bool> tryRefreshClinovaTokens(TokenStorage storage) async {
         },
       ),
     );
-    final res = await dio.post<Map<String, dynamic>>(
-      '/auth/refresh',
-      data: {'refreshToken': refresh},
-    );
+    final res = await dio
+        .post<Map<String, dynamic>>(
+          '/auth/refresh',
+          data: {'refreshToken': refresh},
+        )
+        .timeout(const Duration(seconds: 10));
     final data = res.data;
     if (data == null) return false;
     final access = data['accessToken']?.toString() ?? '';
     final newRefresh = data['refreshToken']?.toString() ?? '';
     if (access.isEmpty) return false;
+    authDebugLog('auth storage write started (refresh endpoint)');
     await storage.saveToken(access);
+    authDebugLog('access token saved');
     if (newRefresh.isNotEmpty) {
       await storage.saveRefreshToken(newRefresh);
+      authDebugLog('refresh token saved');
     }
     return true;
   } catch (_) {

@@ -1,9 +1,24 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'web_token_storage_export.dart';
+
 final tokenStorageProvider = Provider<TokenStorage>((ref) {
+  if (kIsWeb) {
+    return WebLocalStorageTokenStorage();
+  }
   return SecureTokenStorage();
 });
+
+/// Web-only: cache user snapshot in localStorage (see [WebLocalStorageTokenStorage]).
+void persistWebSessionUser(TokenStorage storage, Map<String, dynamic> user) {
+  if (!kIsWeb) return;
+  final web = storage;
+  if (web is WebLocalStorageTokenStorage) {
+    web.saveSessionUser(user);
+  }
+}
 
 abstract class TokenStorage {
   Future<String?> readToken();

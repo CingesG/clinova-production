@@ -90,7 +90,7 @@ flutter:
     - assets/images/
     - assets/images/avatars/
     - assets/images/doctors/
-    - assets/branding/
+    - assets/branding/clinova_logo_ui.png
     - assets/videos/
     - assets/sounds/
 

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/auth/auth_debug_log.dart';
 import 'patient_shell.dart';
 import '../features/auth/application/auth_controller.dart';
 import '../features/admin/presentation/admin_dashboard_screen.dart';
@@ -132,24 +133,38 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       final auth = ref.read(authControllerProvider);
       final location = state.matchedLocation;
 
-      if (auth.isBootstrapping) {
-        return location == '/splash' ? null : '/splash';
+      void logRedirect(String to) {
+        authDebugLog(
+          'router redirect $location -> $to '
+          '(stage=${auth.stage.name}, authed=${auth.isAuthenticated})',
+        );
+      }
+
+      if (auth.holdsSplashDuringStartup) {
+        if (location == '/splash') return null;
+        logRedirect('/splash');
+        return '/splash';
       }
 
       if (location == '/splash') {
         if (auth.isAuthenticated && auth.user != null) {
-          return homeForRole(auth.user!.role);
+          final home = homeForRole(auth.user!.role);
+          logRedirect(home);
+          return home;
         }
+        logRedirect('/welcome');
         return '/welcome';
       }
 
       if (!auth.isAuthenticated) {
         if (location.startsWith('/admin') || location == '/doctor') {
+          logRedirect('/welcome');
           return '/welcome';
         }
         if (isGuestAccessible(location)) {
           return null;
         }
+        logRedirect('/welcome');
         return '/welcome';
       }
 
@@ -157,16 +172,19 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       final roleHome = homeForRole(role);
 
       if (location == '/welcome') {
+        logRedirect(roleHome);
         return roleHome;
       }
 
       final inAuthRoute = location.startsWith('/auth');
 
       if (inAuthRoute) {
+        logRedirect(roleHome);
         return roleHome;
       }
 
       if (!isRouteAllowed(role, location)) {
+        logRedirect(roleHome);
         return roleHome;
       }
 

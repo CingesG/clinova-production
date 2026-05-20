@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/auth/application/auth_controller.dart';
+import '../auth/auth_debug_log.dart';
 import '../config/app_config.dart';
 import '../storage/token_storage.dart';
 import 'token_refresh.dart';
@@ -42,9 +43,19 @@ final apiClientProvider = Provider<Dio>((ref) {
   dio.interceptors.add(
     InterceptorsWrapper(
       onRequest: (options, handler) async {
-        final token = await storage.readToken();
-        if (token != null && token.isNotEmpty) {
-          options.headers['Authorization'] = 'Bearer $token';
+        if (!_isAuthCredentialPath(options.path)) {
+          try {
+            final token = await storage
+                .readToken()
+                .timeout(const Duration(seconds: 5), onTimeout: () => null);
+            if (token != null && token.isNotEmpty) {
+              options.headers['Authorization'] = 'Bearer $token';
+            }
+          } catch (_) {
+            // Proceed without Authorization; server may return 401.
+          }
+        } else {
+          options.headers.remove('Authorization');
         }
         handler.next(options);
       },
@@ -68,21 +79,21 @@ final apiClientProvider = Provider<Dio>((ref) {
         }
 
         if (opts.extra['retryAfterRefresh'] == true) {
-          ref.read(authControllerProvider.notifier).handleUnauthorized();
+          await ref.read(authControllerProvider.notifier).handleUnauthorized();
           handler.next(error);
           return;
         }
 
         final ok = await refreshClinovaTokensCoordinated(storage);
         if (!ok) {
-          ref.read(authControllerProvider.notifier).handleUnauthorized();
+          await ref.read(authControllerProvider.notifier).handleUnauthorized();
           handler.next(error);
           return;
         }
 
         final newToken = await storage.readToken();
         if (newToken == null || newToken.isEmpty) {
-          ref.read(authControllerProvider.notifier).handleUnauthorized();
+          await ref.read(authControllerProvider.notifier).handleUnauthorized();
           handler.next(error);
           return;
         }
@@ -97,9 +108,14 @@ final apiClientProvider = Provider<Dio>((ref) {
         try {
           final response = await dio.fetch<dynamic>(opts);
           handler.resolve(response);
-        } catch (_) {
-          ref.read(authControllerProvider.notifier).handleUnauthorized();
-          handler.next(error);
+        } catch (retryError) {
+          authDebugLog('retry after refresh failed for ${opts.path}');
+          await ref.read(authControllerProvider.notifier).handleUnauthorized();
+          if (retryError is DioException) {
+            handler.next(retryError);
+          } else {
+            handler.next(error);
+          }
         }
       },
     ),

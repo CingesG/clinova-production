@@ -3,17 +3,34 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/auth/auth_lifecycle_scope.dart';
+import '../core/web/web_startup_loader.dart';
 import '../core/pwa/clinova_web_install_bar.dart';
 import '../core/network/realtime_connection_scope.dart';
 import '../core/theme/clinova_theme.dart';
 import '../features/settings/presentation/language_controller.dart';
 import 'router.dart';
 
-class ClinovaApp extends ConsumerWidget {
+class ClinovaApp extends ConsumerStatefulWidget {
   const ClinovaApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ClinovaApp> createState() => _ClinovaAppState();
+}
+
+class _ClinovaAppState extends ConsumerState<ClinovaApp> {
+  @override
+  void initState() {
+    super.initState();
+    if (kIsWeb) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        hideWebHtmlStartupLoader();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final locale = ref.watch(languageControllerProvider);
     final router = ref.watch(appRouterProvider);
 
@@ -57,8 +74,10 @@ class ClinovaApp extends ConsumerWidget {
           clipBehavior: Clip.none,
           children: [
             Positioned.fill(
-              child: RealtimeConnectionScope(
-                child: content,
+              child: AuthLifecycleScope(
+                child: RealtimeConnectionScope(
+                  child: content,
+                ),
               ),
             ),
             if (kIsWeb)
