@@ -1,14 +1,13 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'config/env.dart';
 import 'src/app/app.dart';
-import 'src/app/clinova_web_startup.dart';
 import 'src/features/settings/presentation/language_controller.dart';
 
 Future<void> _initFirebaseOptional() async {
@@ -42,18 +41,19 @@ Future<void> _initFirebaseOptional() async {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  final prefs = await SharedPreferences.getInstance();
+
   if (kIsWeb) {
-    // Do not block first Flutter frame on Firebase or prefs.
     unawaited(_initFirebaseOptional());
-    runApp(const ProviderScope(child: ClinovaWebStartup()));
-    return;
+  } else {
+    await _initFirebaseOptional();
   }
 
-  await _initFirebaseOptional();
-  final prefs = await SharedPreferences.getInstance();
   runApp(
     ProviderScope(
-      overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+      ],
       child: const ClinovaApp(),
     ),
   );

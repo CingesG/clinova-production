@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 const _kLocalePrefKey = 'clinova_locale';
 
-/// Provided from [main] via [ProviderScope.overrides].
+/// Provided from [main] via the root [ProviderScope.overrides].
 final sharedPreferencesProvider = Provider<SharedPreferences>((ref) {
   throw StateError(
     'sharedPreferencesProvider must be overridden in main() with SharedPreferences.getInstance().',
