@@ -102,6 +102,17 @@ export class AppointmentService {
     return new Date(date.getTime() + minutes * 60_000);
   }
 
+  /** Slot times are minute-granularity; avoids duplicate/overlap drift from ms. */
+  private normalizeStartsAt(date: Date) {
+    const normalized = new Date(date);
+    normalized.setSeconds(0, 0);
+    return normalized;
+  }
+
+  private slotIdentity(doctorId: string, startsAt: Date) {
+    return `${doctorId}::${this.normalizeStartsAt(startsAt).toISOString()}`;
+  }
+
   private lockDurationMs() {
     return 2 * 60_000;
   }
@@ -296,10 +307,15 @@ export class AppointmentService {
       },
     });
     const lockSet = new Set(
-      activeLocks.map((lock) => `${lock.doctorId}::${lock.startsAt.toISOString()}`),
+      activeLocks.map((lock) => this.slotIdentity(lock.doctorId, lock.startsAt)),
     );
 
     for (const doctor of doctors) {
+      const bookedStarts = new Set(
+        doctor.appointments.map((appointment) =>
+          this.slotIdentity(doctor.id, appointment.startsAt),
+        ),
+      );
       for (const schedule of doctor.weeklySchedules) {
         let cursor = this.combineDateAndTime(targetDate, schedule.startTime);
         const scheduleEnd = this.combineDateAndTime(targetDate, schedule.endTime);
@@ -326,13 +342,15 @@ export class AppointmentService {
             this.overlaps(slotStart, slotEnd, appointment.startsAt, appointment.endsAt),
           );
 
-          const isLocked = lockSet.has(`${doctor.id}::${slotStart.toISOString()}`);
+          const isLocked = lockSet.has(this.slotIdentity(doctor.id, slotStart));
+          const isBooked = bookedStarts.has(this.slotIdentity(doctor.id, slotStart));
           if (
             slotStart > now &&
             !inBreak &&
             !inTimeOff &&
             !conflict &&
-            !isLocked
+            !isLocked &&
+            !isBooked
           ) {
             slots.push({
               doctorId: doctor.id,
@@ -511,7 +529,7 @@ export class AppointmentService {
   }
 
   async acquireSlotLock(requester: Requester, input: SlotLockInput) {
-    const startsAt = new Date(input.startsAt);
+    const startsAt = this.normalizeStartsAt(new Date(input.startsAt));
     if (Number.isNaN(startsAt.getTime())) {
       throw new BadRequestException('Invalid appointment start date.');
     }
@@ -671,7 +689,7 @@ export class AppointmentService {
       );
     }
 
-    const startsAt = new Date(input.startsAt);
+    const startsAt = this.normalizeStartsAt(new Date(input.startsAt));
     if (Number.isNaN(startsAt.getTime())) {
       throw new BadRequestException('Invalid appointment start date.');
     }
@@ -730,8 +748,10 @@ export class AppointmentService {
       throw new BadRequestException('Doctor is not available during that time.');
     }
 
-    const appointment = await this.prisma.$transaction(
-      async (tx) => {
+    let appointment;
+    try {
+      appointment = await this.prisma.$transaction(
+        async (tx) => {
         if (input.slotLockId) {
           const lock = await tx.appointmentSlotLock.findUnique({
             where: { id: input.slotLockId },
@@ -748,10 +768,24 @@ export class AppointmentService {
           if (
             lock.doctorId !== doctor.id ||
             lock.serviceId !== service.id ||
-            lock.startsAt.getTime() !== startsAt.getTime()
+            this.normalizeStartsAt(lock.startsAt).getTime() !== startsAt.getTime()
           ) {
             throw new ConflictException('Slot lock does not match selected booking details.');
           }
+        }
+
+        const exactBooked = await tx.appointment.findFirst({
+          where: {
+            doctorId: doctor.id,
+            startsAt,
+            status: { not: AppointmentStatus.CANCELLED },
+          },
+          select: { id: true },
+        });
+        if (exactBooked) {
+          throw new ConflictException(
+            'This doctor and time slot is already booked.',
+          );
         }
 
         const overlap = await tx.appointment.findFirst({
@@ -814,11 +848,22 @@ export class AppointmentService {
         }
 
         return created;
-      },
-      {
-        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-      },
-    );
+        },
+        {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        },
+      );
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'This doctor and time slot is already booked.',
+        );
+      }
+      throw error;
+    }
 
     await this.notificationService.createForUsers(
       [appointment.patient.user.id, doctor.userId],

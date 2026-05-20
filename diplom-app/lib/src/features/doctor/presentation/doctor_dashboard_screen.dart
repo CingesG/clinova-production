@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,6 +12,7 @@ import '../../../core/widgets/clinova_backdrop.dart';
 import '../../../core/widgets/clinova_premium_drawer.dart';
 import '../../../core/widgets/premium_healthcare_shell.dart';
 import '../../auth/application/auth_controller.dart';
+import 'appointment_list_utils.dart';
 
 class DoctorDashboardScreen extends ConsumerStatefulWidget {
   const DoctorDashboardScreen({super.key});
@@ -22,18 +25,47 @@ class DoctorDashboardScreen extends ConsumerStatefulWidget {
 class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   late Future<Map<String, dynamic>> _future;
+  Map<String, dynamic>? _dashboardData;
   final Set<String> _busyAppointmentIds = <String>{};
   final Set<String> _busyChatRequestIds = <String>{};
 
   @override
   void initState() {
     super.initState();
-    _future = ref.read(clinovaApiProvider).getDoctorDashboard();
+    _future = _loadDashboard();
+  }
+
+  Future<Map<String, dynamic>> _loadDashboard() async {
+    final data = await ref.read(clinovaApiProvider).getDoctorDashboard();
+    if (mounted) {
+      setState(() => _dashboardData = data);
+    }
+    return data;
   }
 
   Future<void> _refresh() async {
     setState(() {
-      _future = ref.read(clinovaApiProvider).getDoctorDashboard();
+      _future = _loadDashboard();
+    });
+    await _future;
+  }
+
+  void _patchDashboardAppointment(
+    String appointmentId,
+    Map<String, dynamic> updated,
+    String fallbackStatus,
+  ) {
+    final current = _dashboardData;
+    if (current == null) return;
+    final patched = patchDoctorDashboardAppointments(
+      current,
+      appointmentId,
+      updated,
+      fallbackStatus,
+    );
+    setState(() {
+      _dashboardData = patched;
+      _future = Future.value(patched);
     });
   }
 
@@ -45,17 +77,18 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
     if (_busyAppointmentIds.contains(appointmentId)) return;
     setState(() => _busyAppointmentIds.add(appointmentId));
     try {
-      await ref
+      final updated = await ref
           .read(clinovaApiProvider)
           .updateAppointmentStatus(
             appointmentId: appointmentId,
             status: status,
           );
       if (!mounted) return;
+      _patchDashboardAppointment(appointmentId, updated, status);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(successMessage)));
-      await _refresh();
+      unawaited(_refresh());
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -186,7 +219,9 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
           child: FutureBuilder<Map<String, dynamic>>(
             future: _future,
             builder: (context, snapshot) {
-              final data = snapshot.data ?? const <String, dynamic>{};
+              final data = _dashboardData ??
+                  snapshot.data ??
+                  const <String, dynamic>{};
               final todayAppointments =
                   (data['todayAppointments'] as List?)
                       ?.cast<Map<String, dynamic>>() ??

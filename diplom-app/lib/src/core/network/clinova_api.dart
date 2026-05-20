@@ -15,6 +15,10 @@ class ClinovaApi {
 
   final Dio _dio;
 
+  static final _noStoreGet = Options(
+    headers: {'Cache-Control': 'no-cache, no-store, must-revalidate'},
+  );
+
   Future<Map<String, dynamic>> requestOtp({
     required String email,
     String? firstName,
@@ -400,6 +404,7 @@ class ClinovaApi {
     final response = await _dio.get(
       '/appointments/slots',
       queryParameters: queryParameters,
+      options: _noStoreGet,
     );
     return _asList(response.data);
   }
@@ -429,6 +434,7 @@ class ClinovaApi {
     final response = await _dio.get(
       '/appointments/recommend',
       queryParameters: queryParameters,
+      options: _noStoreGet,
     );
     return _asList(response.data);
   }
@@ -623,6 +629,7 @@ class ClinovaApi {
     final response = await _dio.get(
       '/appointments',
       queryParameters: queryParameters,
+      options: _noStoreGet,
     );
     return _asMap(response.data);
   }
@@ -650,7 +657,7 @@ class ClinovaApi {
   }
 
   Future<Map<String, dynamic>> getDoctorDashboard() async {
-    final response = await _dio.get('/dashboard/doctor');
+    final response = await _dio.get('/dashboard/doctor', options: _noStoreGet);
     return _asMap(response.data);
   }
 

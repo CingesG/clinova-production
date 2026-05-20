@@ -476,6 +476,7 @@ class _AppointmentScreenState extends ConsumerState<AppointmentScreen> {
         limit: 3,
       );
 
+      if (!mounted) return;
       setState(() {
         slots = fetchedSlots;
         recommendedSlots = fetchedRecommended;
@@ -483,6 +484,7 @@ class _AppointmentScreenState extends ConsumerState<AppointmentScreen> {
         if (currentStep < 2) currentStep = 2;
       });
     } catch (error) {
+      if (!mounted) return;
       setState(() {
         errorMessage = error.toString();
       });
@@ -492,6 +494,50 @@ class _AppointmentScreenState extends ConsumerState<AppointmentScreen> {
           isSlotsLoading = false;
         });
       }
+    }
+  }
+
+  void _removeBookedSlotFromLists(Map<String, dynamic> bookedSlot) {
+    final key = _slotKey(bookedSlot);
+    slots = slots.where((s) => _slotKey(s) != key).toList();
+    recommendedSlots =
+        recommendedSlots.where((s) => _slotKey(s) != key).toList();
+    selectedSlot = null;
+    activeSlotLockId = null;
+  }
+
+  Future<void> _refreshAppointmentsAfterBooking(
+    Map<String, dynamic> createdAppointment,
+  ) async {
+    if (!ref.read(authControllerProvider).isAuthenticated) return;
+    try {
+      final appointmentsResponse =
+          await ref.read(clinovaApiProvider).getAppointments();
+      if (!mounted) return;
+      final items = (appointmentsResponse['items'] as List?)
+              ?.cast<Map<String, dynamic>>() ??
+          const <Map<String, dynamic>>[];
+      setState(() {
+        upcomingAppointments = items
+            .where((a) {
+              final status =
+                  (a['status']?.toString() ?? '').toUpperCase();
+              return status == 'PENDING' || status == 'CONFIRMED';
+            })
+            .toList();
+      });
+    } catch (_) {
+      if (!mounted) return;
+      final createdId = createdAppointment['id']?.toString();
+      if (createdId == null || createdId.isEmpty) return;
+      setState(() {
+        final exists = upcomingAppointments.any(
+          (a) => a['id']?.toString() == createdId,
+        );
+        if (!exists) {
+          upcomingAppointments = [createdAppointment, ...upcomingAppointments];
+        }
+      });
     }
   }
 
@@ -568,9 +614,13 @@ class _AppointmentScreenState extends ConsumerState<AppointmentScreen> {
             intakeAnswers: intakeAnswers,
             withPaymentIntent: true,
           );
-      activeSlotLockId = null;
 
       if (!mounted) return;
+
+      setState(() {
+        _removeBookedSlotFromLists(slot);
+        currentStep = 2;
+      });
 
       ScaffoldMessenger.of(
         context,
@@ -583,20 +633,8 @@ class _AppointmentScreenState extends ConsumerState<AppointmentScreen> {
         );
       }
 
+      await _refreshAppointmentsAfterBooking(result);
       await _loadSlots();
-      if (ref.read(authControllerProvider).isAuthenticated) {
-        final appointmentsResponse = await ref
-            .read(clinovaApiProvider)
-            .getAppointments(status: 'PENDING');
-        setState(() {
-          selectedSlot = null;
-          currentStep = 2;
-          upcomingAppointments =
-              (appointmentsResponse['items'] as List?)
-                  ?.cast<Map<String, dynamic>>() ??
-              const [];
-        });
-      }
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(
